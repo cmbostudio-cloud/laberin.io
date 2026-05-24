@@ -1,1113 +1,353 @@
 <!DOCTYPE html>
 <html lang="ko">
-
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-    <title>laberin.io</title>
-
-    <style>
-        html,
-        body {
-            margin: 0;
-            overflow: hidden;
-            background: #101010;
-            font-family: monospace;
-        }
-
-        canvas {
-            display: block;
-            image-rendering: pixelated;
-        }
-
-        #ui {
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            z-index: 100;
-
-            color: white;
-
-            background: rgba(0, 0, 0, 0.45);
-
-            border: 1px solid #444;
-
-            padding: 10px;
-
-            min-width: 220px;
-            display: none;
-        }
-
-        #settings-btn {
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            z-index: 130;
-            width: 42px;
-            height: 42px;
-            border-radius: 50%;
-            border: 1px solid #555;
-            background: rgba(0, 0, 0, 0.65);
-            color: #fff;
-            font-size: 20px;
-            cursor: pointer;
-            line-height: 1;
-            padding: 0;
-        }
-
-        #settings-btn:hover {
-            background: rgba(40, 40, 40, 0.85);
-        }
-
-        #title {
-            color: #7df9ff;
-            font-weight: bold;
-            margin-bottom: 6px;
-        }
-
-        button {
-            width: 100%;
-            margin-top: 6px;
-
-            background: #222;
-            color: white;
-
-            border: 1px solid #555;
-
-            padding: 7px;
-
-            cursor: pointer;
-
-            font-family: monospace;
-        }
-
-        button:hover {
-            background: #333;
-        }
-
-        #joystick-zone {
-            position: fixed;
-            left: 20px;
-            bottom: 20px;
-            width: 140px;
-            height: 140px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.25);
-            z-index: 120;
-            touch-action: none;
-            display: none;
-        }
-
-        #joystick-knob {
-            position: absolute;
-            width: 58px;
-            height: 58px;
-            left: 41px;
-            top: 41px;
-            border-radius: 50%;
-            background: rgba(125, 249, 255, 0.65);
-            border: 1px solid rgba(255, 255, 255, 0.5);
-            pointer-events: none;
-        }
-
-        @media (pointer: fine) {
-            #joystick-zone {
-                display: none !important;
-            }
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>laberin.io</title>
+  <style>
+    html, body { margin: 0; overflow: hidden; background: #101010; font-family: monospace; }
+    canvas { display: block; image-rendering: pixelated; }
+    #hud {
+      position: fixed; top: 10px; left: 10px; z-index: 100; color: white;
+      background: rgba(0, 0, 0, 0.45); border: 1px solid #444; padding: 10px; min-width: 200px;
+    }
+    #settings-btn {
+      position: fixed; top: 10px; right: 10px; z-index: 130; width: 42px; height: 42px;
+      border-radius: 50%; border: 1px solid #555; background: rgba(0, 0, 0, 0.65);
+      color: #fff; font-size: 20px; cursor: pointer; line-height: 1; padding: 0;
+    }
+    #settings-menu {
+      position: fixed; top: 62px; right: 10px; z-index: 125; color: white;
+      background: rgba(0, 0, 0, 0.65); border: 1px solid #444; padding: 10px; min-width: 220px; display: none;
+    }
+    #title { color: #7df9ff; font-weight: bold; margin-bottom: 6px; }
+    button { width: 100%; margin-top: 6px; background: #222; color: white; border: 1px solid #555; padding: 7px; cursor: pointer; font-family: monospace; }
+    button:hover { background: #333; }
+    #joystick-zone {
+      position: fixed; left: 20px; bottom: 20px; width: 140px; height: 140px; border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.25); z-index: 120;
+      touch-action: none; display: none;
+    }
+    #joystick-knob {
+      position: absolute; width: 58px; height: 58px; left: 41px; top: 41px; border-radius: 50%;
+      background: rgba(125, 249, 255, 0.65); border: 1px solid rgba(255, 255, 255, 0.5); pointer-events: none;
+    }
+    @media (pointer: fine) { #joystick-zone { display: none !important; } }
+  </style>
 </head>
-
 <body>
+  <button id="settings-btn" aria-label="Settings">⚙</button>
 
-    <button id="settings-btn" aria-label="Settings">⚙</button>
+  <div id="hud">
+    <div id="title">laberin.io</div>
+    <div>Stage: <span id="stage">1</span></div>
+    <div style="margin-top:6px;">WASD / Arrow Keys</div>
+  </div>
 
-    <div id="ui">
+  <div id="settings-menu">
+    <button onclick="restartMap()">Restart Current Map</button>
+    <button onclick="resetGame()">Reset Entire Save</button>
+  </div>
 
-        <div id="title">
-            laberin.io
-        </div>
+  <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.x/dist/pixi.min.js"></script>
+  <script>
+    const app = new PIXI.Application({ resizeTo: window, background: "#101010", antialias: false });
+    document.body.appendChild(app.view);
 
-        <div>
-            Stage:
-            <span id="stage">1</span>
-        </div>
+    const TILE = 32;
+    const PLAYER_RADIUS = 8;
+    const CAMERA_ZOOM = 1.25;
 
-        <div style="margin-top:6px;">
-            WASD / Arrow Keys
-        </div>
+    let stageLevel = 1;
+    let mazeW = 15;
+    let mazeH = 15;
+    let maze = [];
 
-        <button onclick="restartMap()">
-            Restart Current Map
-        </button>
+    const keys = {};
+    const mobileInput = { active: false, dx: 0, dy: 0, pointerId: null };
 
-        <button onclick="resetGame()">
-            Reset Entire Save
-        </button>
+    window.addEventListener("keydown", e => { keys[e.key.toLowerCase()] = true; });
+    window.addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
 
-    </div>
+    const player = { x: 0, y: 0, speed: 2.8 };
+    const spawn = { x: 0, y: 0 };
+    const exit = { x: 0, y: 0 };
 
-    <div id="joystick-zone">
-        <div id="joystick-knob"></div>
-    </div>
+    const world = new PIXI.Container();
+    world.scale.set(CAMERA_ZOOM);
+    app.stage.addChild(world);
 
-    <div id="joystick-zone">
-        <div id="joystick-knob"></div>
-    </div>
+    const playerGraphic = new PIXI.Graphics();
+    const exitGraphic = new PIXI.Graphics();
 
-    <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.x/dist/pixi.min.js"></script>
+    function saveGame() {
+      localStorage.setItem("laberin-save", JSON.stringify({ stageLevel, mazeW, mazeH }));
+    }
 
-    <script>
+    function loadGame() {
+      const data = localStorage.getItem("laberin-save");
+      if (!data) return;
+      try {
+        const save = JSON.parse(data);
+        stageLevel = save.stageLevel || 1;
+        mazeW = save.mazeW || 15;
+        mazeH = save.mazeH || 15;
+      } catch (e) {}
+    }
 
-        const app = new PIXI.Application({
-            resizeTo: window,
-            background: "#101010",
-            antialias: false
-        });
+    function resetGame() {
+      localStorage.removeItem("laberin-save");
+      stageLevel = 1;
+      mazeW = 15;
+      mazeH = 15;
+      generateMaze(mazeW, mazeH);
+      buildWorld();
+    }
 
-        document.body.appendChild(app.view);
+    function restartMap() {
+      player.x = spawn.x;
+      player.y = spawn.y;
+    }
 
-        const TILE = 32;
-        const PLAYER_RADIUS = 8;
+    function findFarthestOpenTile(startX, startY) {
+      const visited = Array.from({ length: mazeH }, () => Array(mazeW).fill(false));
+      const queue = [{ x: startX, y: startY, d: 0 }];
+      visited[startY][startX] = true;
+      let farthest = queue[0];
+      let qi = 0;
 
-        // 현재보다 2.5배 확대
-        const CAMERA_ZOOM = 1.25;
-
-        let stageLevel = 1;
-
-        let mazeW = 15;
-        let mazeH = 15;
-
-        let maze = [];
-
-        const keys = {};
-        const mobileInput = {
-            active: false,
-            dx: 0,
-            dy: 0,
-            pointerId: null
-        };
-
-        window.addEventListener("keydown", e => {
-            keys[e.key.toLowerCase()] = true;
-        });
-
-        window.addEventListener("keyup", e => {
-            keys[e.key.toLowerCase()] = false;
-        });
-
-        const player = {
-            x: 0,
-            y: 0,
-            speed: 2.8
-        };
-
-        const spawn = {
-            x: 0,
-            y: 0
-        };
-
-        const exit = {
-            x: 0,
-            y: 0
-        };
-
-        const saws = [];
-
-        const world = new PIXI.Container();
-
-        world.scale.set(CAMERA_ZOOM);
-
-        app.stage.addChild(world);
-
-        const playerGraphic = new PIXI.Graphics();
-        const exitGraphic = new PIXI.Graphics();
-        const arrowGraphic = new PIXI.Graphics();
-
-        function saveGame() {
-
-            localStorage.setItem(
-                "laberin-save",
-                JSON.stringify({
-                    stageLevel,
-                    mazeW,
-                    mazeH
-                })
-            );
+      while (qi < queue.length) {
+        const cur = queue[qi++];
+        if (cur.d > farthest.d) farthest = cur;
+        const nexts = [[cur.x + 1, cur.y], [cur.x - 1, cur.y], [cur.x, cur.y + 1], [cur.x, cur.y - 1]];
+        for (const [nx, ny] of nexts) {
+          if (nx < 0 || ny < 0 || nx >= mazeW || ny >= mazeH || visited[ny][nx] || maze[ny][nx] !== 0) continue;
+          visited[ny][nx] = true;
+          queue.push({ x: nx, y: ny, d: cur.d + 1 });
         }
+      }
+      return farthest;
+    }
 
-        function loadGame() {
+    function generateMaze(w, h) {
+      maze = [];
+      for (let y = 0; y < h; y++) {
+        maze[y] = [];
+        for (let x = 0; x < w; x++) maze[y][x] = 1;
+      }
 
-            const data =
-                localStorage.getItem("laberin-save");
-
-            if (!data) return;
-
-            try {
-
-                const save = JSON.parse(data);
-
-                stageLevel = save.stageLevel || 1;
-                mazeW = save.mazeW || 15;
-                mazeH = save.mazeH || 15;
-
-            } catch (e) { }
+      function carve(cx, cy) {
+        const dirs = [[0, -2], [2, 0], [0, 2], [-2, 0]];
+        dirs.sort(() => Math.random() - 0.5);
+        for (const [dx, dy] of dirs) {
+          const nx = cx + dx;
+          const ny = cy + dy;
+          if (nx > 0 && ny > 0 && nx < w - 1 && ny < h - 1 && maze[ny][nx] === 1) {
+            maze[ny][nx] = 0;
+            maze[cy + dy / 2][cx + dx / 2] = 0;
+            carve(nx, ny);
+          }
         }
+      }
 
-        function resetGame() {
+      maze[1][1] = 0;
+      carve(1, 1);
 
-            localStorage.removeItem("laberin-save");
+      spawn.x = TILE * 1.5;
+      spawn.y = TILE * 1.5;
+      player.x = spawn.x;
+      player.y = spawn.y;
 
-            stageLevel = 1;
+      const farthest = findFarthestOpenTile(1, 1);
+      exit.x = farthest.x * TILE + TILE / 2;
+      exit.y = farthest.y * TILE + TILE / 2;
+    }
 
-            mazeW = 15;
-            mazeH = 15;
-
-            generateMaze(mazeW, mazeH);
-
-            buildWorld();
+    function buildWorld() {
+      world.removeChildren();
+      for (let y = 0; y < mazeH; y++) {
+        for (let x = 0; x < mazeW; x++) {
+          const g = new PIXI.Graphics();
+          if (maze[y][x] === 1) {
+            g.beginFill(0x2d2d2d);
+            g.drawRect(0, 0, TILE, TILE);
+            g.beginFill(0x404040);
+            for (let py = 0; py < TILE; py += 8) for (let px = 0; px < TILE; px += 8) g.drawRect(px, py, 3, 3);
+          } else {
+            g.beginFill(0x1a1a1a);
+            g.drawRect(0, 0, TILE, TILE);
+            g.beginFill(0x242424);
+            for (let py = 0; py < TILE; py += 8) for (let px = 0; px < TILE; px += 8) g.drawRect(px, py, 1, 1);
+          }
+          g.endFill();
+          g.x = x * TILE;
+          g.y = y * TILE;
+          world.addChild(g);
         }
-
-        function restartMap() {
-
-            player.x = spawn.x;
-            player.y = spawn.y;
-        }
-
-        function generateMaze(w, h) {
-
-            maze = [];
-
-            for (let y = 0; y < h; y++) {
-
-                maze[y] = [];
-
-                for (let x = 0; x < w; x++) {
-                    maze[y][x] = 1;
-                }
-            }
-
-            function carve(cx, cy) {
-
-                const dirs = [
-                    [0, -2],
-                    [2, 0],
-                    [0, 2],
-                    [-2, 0]
-                ];
-
-                dirs.sort(() => Math.random() - 0.5);
-
-                for (const [dx, dy] of dirs) {
-
-                    const nx = cx + dx;
-                    const ny = cy + dy;
-
-                    if (
-                        nx > 0 &&
-                        ny > 0 &&
-                        nx < w - 1 &&
-                        ny < h - 1 &&
-                        maze[ny][nx] === 1
-                    ) {
-
-                        maze[ny][nx] = 0;
-
-                        maze[
-                            cy + dy / 2
-                        ][
-                            cx + dx / 2
-                        ] = 0;
-
-                        carve(nx, ny);
-                    }
-                }
-            }
-
-            maze[1][1] = 0;
-
-            carve(1, 1);
-
-            spawn.x = TILE * 1.5;
-            spawn.y = TILE * 1.5;
-
-            player.x = spawn.x;
-            player.y = spawn.y;
-
-            exit.x =
-                (w - 2) * TILE + TILE / 2;
-
-            exit.y =
-                (h - 2) * TILE + TILE / 2;
-
-            maze[h - 2][w - 2] = 0;
-
-            generateSaws();
-        }
-
-        function generateSaws() {
-
-            saws.length = 0;
-
-            const count =
-                Math.floor(stageLevel * 1.5);
-
-            for (let i = 0; i < count; i++) {
-
-                let x, y;
-
-                do {
-
-                    x =
-                        Math.floor(
-                            Math.random() * mazeW
-                        );
-
-                    y =
-                        Math.floor(
-                            Math.random() * mazeH
-                        );
-
-                } while (
-                    maze[y][x] !== 0 ||
-                    (x < 3 && y < 3)
-                );
-
-                const openCount = [
-
-                    maze[y - 1]?.[x],
-                    maze[y + 1]?.[x],
-                    maze[y]?.[x - 1],
-                    maze[y]?.[x + 1]
-
-                ].filter(v => v === 0).length;
-
-                const horizontalOpen =
-                    maze[y]?.[x - 1] === 0 &&
-                    maze[y]?.[x + 1] === 0;
-
-                const verticalOpen =
-                    maze[y - 1]?.[x] === 0 &&
-                    maze[y + 1]?.[x] === 0;
-
-                // 좁은 통로(양방향 1칸)에서는 톱날이 길을 완전히 차단할 수 있으므로 생성 금지
-                if (openCount <= 2 && (horizontalOpen || verticalOpen)) {
-                    i--;
-                    continue;
-                }
-
-                const horizontal =
-                    Math.random() > 0.5;
-
-                saws.push({
-
-                    x:
-                        x * TILE + TILE / 2,
-
-                    y:
-                        y * TILE + TILE / 2,
-
-                    startX:
-                        x * TILE + TILE / 2,
-
-                    startY:
-                        y * TILE + TILE / 2,
-
-                    dir: 1,
-
-                    // 2배 느리게
-                    speed:
-                        0.75 +
-                        Math.random() * 0.5,
-
-                    // 좁은 길이면 짧게 이동
-                    range:
-
-                        openCount <= 2
-
-                            ? TILE * (
-                                1 + Math.random()
-                            )
-
-                            : TILE * (
-                                2 + Math.random() * 4
-                            ),
-
-                    horizontal,
-
-                    // 벽 관통 톱날
-                    ghost:
-                        Math.random() < 0.35,
-
-                    graphic:
-                        new PIXI.Graphics()
-                });
-            }
-        }
-
-        function buildWorld() {
-
-            world.removeChildren();
-
-            for (let y = 0; y < mazeH; y++) {
-
-                for (let x = 0; x < mazeW; x++) {
-
-                    const g =
-                        new PIXI.Graphics();
-
-                    if (maze[y][x] === 1) {
-
-                        g.beginFill(0x2d2d2d);
-
-                        g.drawRect(
-                            0,
-                            0,
-                            TILE,
-                            TILE
-                        );
-
-                        g.beginFill(0x404040);
-
-                        for (
-                            let py = 0;
-                            py < TILE;
-                            py += 8
-                        ) {
-
-                            for (
-                                let px = 0;
-                                px < TILE;
-                                px += 8
-                            ) {
-
-                                g.drawRect(
-                                    px,
-                                    py,
-                                    3,
-                                    3
-                                );
-                            }
-                        }
-
-                    } else {
-
-                        g.beginFill(0x1a1a1a);
-
-                        g.drawRect(
-                            0,
-                            0,
-                            TILE,
-                            TILE
-                        );
-
-                        g.beginFill(0x242424);
-
-                        for (
-                            let py = 0;
-                            py < TILE;
-                            py += 8
-                        ) {
-
-                            for (
-                                let px = 0;
-                                px < TILE;
-                                px += 8
-                            ) {
-
-                                g.drawRect(
-                                    px,
-                                    py,
-                                    1,
-                                    1
-                                );
-                            }
-                        }
-                    }
-
-                    g.endFill();
-
-                    g.x = x * TILE;
-                    g.y = y * TILE;
-
-                    world.addChild(g);
-                }
-            }
-
-            world.addChild(exitGraphic);
-
-            for (const saw of saws) {
-                world.addChild(saw.graphic);
-            }
-
-            world.addChild(arrowGraphic);
-            world.addChild(playerGraphic);
-        }
-
-        function drawPlayer() {
-
-            playerGraphic.clear();
-
-            playerGraphic.beginFill(0xffffff);
-
-            playerGraphic.drawCircle(
-                0,
-                0,
-                PLAYER_RADIUS
-            );
-
-            playerGraphic.beginFill(0x7df9ff);
-
-            playerGraphic.drawRect(
-                -3,
-                -3,
-                3,
-                3
-            );
-
-            playerGraphic.endFill();
-
-            playerGraphic.x = player.x;
-            playerGraphic.y = player.y;
-        }
-
-        function drawExit() {
-
-            exitGraphic.clear();
-
-            exitGraphic.beginFill(0x66ff88);
-
-            exitGraphic.drawRect(
-                -8,
-                -8,
-                16,
-                16
-            );
-
-            exitGraphic.endFill();
-
-            exitGraphic.x = exit.x;
-            exitGraphic.y = exit.y;
-        }
-
-        function drawArrow() {
-
-            arrowGraphic.clear();
-
-            const dx = exit.x - player.x;
-            const dy = exit.y - player.y;
-
-            const angle =
-                Math.atan2(dy, dx);
-
-            const offset = 22;
-
-            arrowGraphic.beginFill(0xffdd55);
-
-            arrowGraphic.moveTo(12, 0);
-            arrowGraphic.lineTo(-8, -6);
-            arrowGraphic.lineTo(-8, 6);
-
-            arrowGraphic.endFill();
-
-            arrowGraphic.x =
-                player.x +
-                Math.cos(angle) * offset;
-
-            arrowGraphic.y =
-                player.y +
-                Math.sin(angle) * offset;
-
-            arrowGraphic.rotation = angle;
-        }
-
-        function drawSaws() {
-
-            for (const saw of saws) {
-
-                if (saw.horizontal) {
-
-                    const nextX =
-                        saw.x +
-                        saw.speed * saw.dir;
-
-                    const tx =
-                        Math.floor(nextX / TILE);
-
-                    const ty =
-                        Math.floor(saw.y / TILE);
-
-                    const entersHorizontalChoke =
-                        maze[ty - 1]?.[tx] === 1 &&
-                        maze[ty + 1]?.[tx] === 1 &&
-                        maze[ty]?.[tx - 1] === 0 &&
-                        maze[ty]?.[tx + 1] === 0;
-
-                    if (
-                        tx <= 0 ||
-                        tx >= mazeW - 1 ||
-                        entersHorizontalChoke ||
-                        (!saw.ghost && maze[ty][tx] === 1) ||
-                        Math.abs(
-                            nextX - saw.startX
-                        ) > saw.range
-                    ) {
-
-                        saw.dir *= -1;
-
-                    } else {
-
-                        saw.x = nextX;
-                    }
-
-                } else {
-
-                    const nextY =
-                        saw.y +
-                        saw.speed * saw.dir;
-
-                    const tx =
-                        Math.floor(saw.x / TILE);
-
-                    const ty =
-                        Math.floor(nextY / TILE);
-
-                    const entersVerticalChoke =
-                        maze[ty]?.[tx - 1] === 1 &&
-                        maze[ty]?.[tx + 1] === 1 &&
-                        maze[ty - 1]?.[tx] === 0 &&
-                        maze[ty + 1]?.[tx] === 0;
-
-                    if (
-                        ty <= 0 ||
-                        ty >= mazeH - 1 ||
-                        entersVerticalChoke ||
-                        (!saw.ghost && maze[ty][tx] === 1) ||
-                        Math.abs(
-                            nextY - saw.startY
-                        ) > saw.range
-                    ) {
-
-                        saw.dir *= -1;
-
-                    } else {
-
-                        saw.y = nextY;
-                    }
-                }
-
-                saw.graphic.clear();
-
-                saw.graphic.beginFill(
-
-                    saw.ghost
-
-                        ? 0xd9d9d9
-
-                        : 0xd9d9d9
-                );
-
-                const teeth = 12;
-
-                for (let i = 0; i < teeth; i++) {
-
-                    const a1 =
-                        (Math.PI * 2 / teeth) * i;
-
-                    const a2 = a1 + 0.2;
-
-                    saw.graphic.moveTo(0, 0);
-
-                    saw.graphic.lineTo(
-                        Math.cos(a1) * 14,
-                        Math.sin(a1) * 14
-                    );
-
-                    saw.graphic.lineTo(
-                        Math.cos(a2) * 8,
-                        Math.sin(a2) * 8
-                    );
-                }
-
-                saw.graphic.drawCircle(
-                    0,
-                    0,
-                    10
-                );
-
-                saw.graphic.endFill();
-
-                saw.graphic.rotation += 0.2;
-
-                saw.graphic.x = saw.x;
-                saw.graphic.y = saw.y;
-
-                const dist =
-                    Math.hypot(
-                        player.x - saw.x,
-                        player.y - saw.y
-                    );
-
-                if (dist < 16) {
-                    restartMap();
-                }
-            }
-        }
-
-        function isWall(px, py) {
-
-            const tx =
-                Math.floor(px / TILE);
-
-            const ty =
-                Math.floor(py / TILE);
-
-            if (
-                tx < 0 ||
-                ty < 0 ||
-                tx >= mazeW ||
-                ty >= mazeH
-            ) return true;
-
-            return maze[ty][tx] === 1;
-        }
-
-        function movePlayer() {
-
-            let dx = 0;
-            let dy = 0;
-
-            if (
-                keys["w"] ||
-                keys["arrowup"]
-            ) dy -= 1;
-
-            if (
-                keys["s"] ||
-                keys["arrowdown"]
-            ) dy += 1;
-
-            if (
-                keys["a"] ||
-                keys["arrowleft"]
-            ) dx -= 1;
-
-            if (
-                keys["d"] ||
-                keys["arrowright"]
-            ) dx += 1;
-
-            dx += mobileInput.dx;
-            dy += mobileInput.dy;
-
-            const lenRaw =
-                Math.hypot(dx, dy);
-
-            const len =
-                Math.min(1, lenRaw);
-
-            if (len > 0) {
-
-                dx /= lenRaw;
-                dy /= lenRaw;
-            }
-
-            const nx =
-                player.x +
-                dx * player.speed * len;
-
-            const ny =
-                player.y +
-                dy * player.speed * len;
-
-            const pad = 7;
-
-            if (
-                !isWall(nx - pad, player.y - pad) &&
-                !isWall(nx + pad, player.y - pad) &&
-                !isWall(nx - pad, player.y + pad) &&
-                !isWall(nx + pad, player.y + pad)
-            ) {
-                player.x = nx;
-            }
-
-            if (
-                !isWall(player.x - pad, ny - pad) &&
-                !isWall(player.x + pad, ny - pad) &&
-                !isWall(player.x - pad, ny + pad) &&
-                !isWall(player.x + pad, ny + pad)
-            ) {
-                player.y = ny;
-            }
-        }
-
-        function cameraFollow() {
-
-            const tx =
-                app.screen.width / 2 -
-                player.x * CAMERA_ZOOM;
-
-            const ty =
-                app.screen.height / 2 -
-                player.y * CAMERA_ZOOM;
-
-            world.x +=
-                (tx - world.x) * 0.08;
-
-            world.y +=
-                (ty - world.y) * 0.08;
-        }
-
-        function checkExit() {
-
-            const dist =
-                Math.hypot(
-                    player.x - exit.x,
-                    player.y - exit.y
-                );
-
-            if (dist < 18) {
-
-                stageLevel++;
-
-                document.getElementById(
-                    "stage"
-                ).innerText = stageLevel;
-
-                mazeW += 4;
-                mazeH += 4;
-
-                if (mazeW % 2 === 0)
-                    mazeW++;
-
-                if (mazeH % 2 === 0)
-                    mazeH++;
-
-                saveGame();
-
-                generateMaze(
-                    mazeW,
-                    mazeH
-                );
-
-                buildWorld();
-            }
-        }
-
-        function update() {
-
-            movePlayer();
-
-            cameraFollow();
-
-            drawPlayer();
-
-            drawExit();
-
-            drawArrow();
-
-            drawSaws();
-
-            checkExit();
-        }
-
-        function setupJoystick() {
-
-            const coarsePointerQuery =
-                window.matchMedia("(pointer: coarse)");
-
-            const isTouchDevice =
-                coarsePointerQuery.matches;
-
-            if (!isTouchDevice) return;
-
-            const zone =
-                document.getElementById("joystick-zone");
-            const knob =
-                document.getElementById("joystick-knob");
-
-            zone.style.display = "block";
-
-            const center = { x: 70, y: 70 };
-            const maxR = 45;
-
-            function updateKnob(clientX, clientY) {
-
-                const rect = zone.getBoundingClientRect();
-                let dx = clientX - (rect.left + center.x);
-                let dy = clientY - (rect.top + center.y);
-
-                const len = Math.hypot(dx, dy);
-
-                if (len > maxR) {
-                    dx = dx / len * maxR;
-                    dy = dy / len * maxR;
-                }
-
-                knob.style.left = `${center.x + dx - 29}px`;
-                knob.style.top = `${center.y + dy - 29}px`;
-
-                mobileInput.dx = dx / maxR;
-                mobileInput.dy = dy / maxR;
-            }
-
-            function resetKnob() {
-                knob.style.left = "41px";
-                knob.style.top = "41px";
-                mobileInput.active = false;
-                mobileInput.dx = 0;
-                mobileInput.dy = 0;
-                mobileInput.pointerId = null;
-            }
-
-            zone.addEventListener("pointerdown", e => {
-                mobileInput.active = true;
-                mobileInput.pointerId = e.pointerId;
-                zone.setPointerCapture(e.pointerId);
-                updateKnob(e.clientX, e.clientY);
-            });
-
-            zone.addEventListener("pointermove", e => {
-                if (!mobileInput.active || e.pointerId !== mobileInput.pointerId) return;
-                updateKnob(e.clientX, e.clientY);
-            });
-
-            zone.addEventListener("pointerup", e => {
-                if (e.pointerId !== mobileInput.pointerId) return;
-                resetKnob();
-            });
-
-            zone.addEventListener("pointercancel", resetKnob);
-
-            coarsePointerQuery.addEventListener("change", e => {
-                if (e.matches) {
-                    zone.style.display = "block";
-                } else {
-                    zone.style.display = "none";
-                    resetKnob();
-                }
-            });
-        }
-
-        function setupSettingsMenu() {
-            const settingsBtn =
-                document.getElementById("settings-btn");
-            const ui =
-                document.getElementById("ui");
-
-            settingsBtn.addEventListener("click", () => {
-                const isOpen = ui.style.display === "block";
-                ui.style.display = isOpen ? "none" : "block";
-            });
-
-            window.addEventListener("keydown", e => {
-                if (e.key === "Escape") {
-                    ui.style.display = "none";
-                }
-            });
-        }
-
-        function setupJoystick() {
-
-            const coarsePointerQuery =
-                window.matchMedia("(pointer: coarse)");
-
-            const isTouchDevice =
-                coarsePointerQuery.matches;
-
-            if (!isTouchDevice) return;
-
-            const zone =
-                document.getElementById("joystick-zone");
-            const knob =
-                document.getElementById("joystick-knob");
-
-            zone.style.display = "block";
-
-            const center = { x: 70, y: 70 };
-            const maxR = 45;
-
-            function updateKnob(clientX, clientY) {
-
-                const rect = zone.getBoundingClientRect();
-                let dx = clientX - (rect.left + center.x);
-                let dy = clientY - (rect.top + center.y);
-
-                const len = Math.hypot(dx, dy);
-
-                if (len > maxR) {
-                    dx = dx / len * maxR;
-                    dy = dy / len * maxR;
-                }
-
-                knob.style.left = `${center.x + dx - 29}px`;
-                knob.style.top = `${center.y + dy - 29}px`;
-
-                mobileInput.dx = dx / maxR;
-                mobileInput.dy = dy / maxR;
-            }
-
-            function resetKnob() {
-                knob.style.left = "41px";
-                knob.style.top = "41px";
-                mobileInput.active = false;
-                mobileInput.dx = 0;
-                mobileInput.dy = 0;
-                mobileInput.pointerId = null;
-            }
-
-            zone.addEventListener("pointerdown", e => {
-                mobileInput.active = true;
-                mobileInput.pointerId = e.pointerId;
-                zone.setPointerCapture(e.pointerId);
-                updateKnob(e.clientX, e.clientY);
-            });
-
-            zone.addEventListener("pointermove", e => {
-                if (!mobileInput.active || e.pointerId !== mobileInput.pointerId) return;
-                updateKnob(e.clientX, e.clientY);
-            });
-
-            zone.addEventListener("pointerup", e => {
-                if (e.pointerId !== mobileInput.pointerId) return;
-                resetKnob();
-            });
-
-            zone.addEventListener("pointercancel", resetKnob);
-
-            coarsePointerQuery.addEventListener("change", e => {
-                if (e.matches) {
-                    zone.style.display = "block";
-                } else {
-                    zone.style.display = "none";
-                    resetKnob();
-                }
-            });
-        }
-
-        loadGame();
-
-        document.getElementById(
-            "stage"
-        ).innerText = stageLevel;
-
-        generateMaze(
-            mazeW,
-            mazeH
-        );
-
+      }
+      world.addChild(exitGraphic);
+      world.addChild(playerGraphic);
+    }
+
+    function drawPlayer() {
+      playerGraphic.clear();
+      playerGraphic.beginFill(0xffffff);
+      playerGraphic.drawCircle(0, 0, PLAYER_RADIUS);
+      playerGraphic.beginFill(0x7df9ff);
+      playerGraphic.drawRect(-3, -3, 3, 3);
+      playerGraphic.endFill();
+      playerGraphic.x = player.x;
+      playerGraphic.y = player.y;
+    }
+
+    function drawExit() {
+      exitGraphic.clear();
+      exitGraphic.beginFill(0x66ff88);
+      exitGraphic.drawRect(-8, -8, 16, 16);
+      exitGraphic.endFill();
+      exitGraphic.x = exit.x;
+      exitGraphic.y = exit.y;
+    }
+
+    function isWall(px, py) {
+      const tx = Math.floor(px / TILE);
+      const ty = Math.floor(py / TILE);
+      if (tx < 0 || ty < 0 || tx >= mazeW || ty >= mazeH) return true;
+      return maze[ty][tx] === 1;
+    }
+
+    function movePlayer() {
+      let dx = 0, dy = 0;
+      if (keys["w"] || keys["arrowup"]) dy -= 1;
+      if (keys["s"] || keys["arrowdown"]) dy += 1;
+      if (keys["a"] || keys["arrowleft"]) dx -= 1;
+      if (keys["d"] || keys["arrowright"]) dx += 1;
+      dx += mobileInput.dx;
+      dy += mobileInput.dy;
+
+      const lenRaw = Math.hypot(dx, dy);
+      const len = Math.min(1, lenRaw);
+      if (len > 0) { dx /= lenRaw; dy /= lenRaw; }
+
+      const nx = player.x + dx * player.speed * len;
+      const ny = player.y + dy * player.speed * len;
+      const pad = 7;
+
+      if (!isWall(nx - pad, player.y - pad) && !isWall(nx + pad, player.y - pad) && !isWall(nx - pad, player.y + pad) && !isWall(nx + pad, player.y + pad)) player.x = nx;
+      if (!isWall(player.x - pad, ny - pad) && !isWall(player.x + pad, ny - pad) && !isWall(player.x - pad, ny + pad) && !isWall(player.x + pad, ny + pad)) player.y = ny;
+    }
+
+    function cameraFollow() {
+      const tx = app.screen.width / 2 - player.x * CAMERA_ZOOM;
+      const ty = app.screen.height / 2 - player.y * CAMERA_ZOOM;
+      world.x += (tx - world.x) * 0.08;
+      world.y += (ty - world.y) * 0.08;
+    }
+
+    function checkExit() {
+      const dist = Math.hypot(player.x - exit.x, player.y - exit.y);
+      if (dist < 18) {
+        stageLevel++;
+        document.getElementById("stage").innerText = stageLevel;
+        mazeW += 4; mazeH += 4;
+        if (mazeW % 2 === 0) mazeW++;
+        if (mazeH % 2 === 0) mazeH++;
+        saveGame();
+        generateMaze(mazeW, mazeH);
         buildWorld();
+      }
+    }
 
-        setupSettingsMenu();
+    function update() {
+      movePlayer();
+      cameraFollow();
+      drawPlayer();
+      drawExit();
+      checkExit();
+    }
 
-        setupJoystick();
+    function setupSettingsMenu() {
+      const settingsBtn = document.getElementById("settings-btn");
+      const menu = document.getElementById("settings-menu");
+      settingsBtn.addEventListener("click", () => {
+        menu.style.display = menu.style.display === "block" ? "none" : "block";
+      });
+      window.addEventListener("keydown", e => { if (e.key === "Escape") menu.style.display = "none"; });
+    }
 
-        app.ticker.add(update);
+    function setupJoystick() {
+      const coarsePointerQuery = window.matchMedia("(pointer: coarse)");
+      if (!coarsePointerQuery.matches) return;
 
-    </script>
+      const zone = document.createElement("div");
+      zone.id = "joystick-zone";
+      const knob = document.createElement("div");
+      knob.id = "joystick-knob";
+      zone.appendChild(knob);
+      document.body.appendChild(zone);
+      zone.style.display = "block";
 
+      const maxR = 45;
+      let center = { x: 70, y: 70 };
+
+      function updateKnob(clientX, clientY) {
+        const rect = zone.getBoundingClientRect();
+        let dx = clientX - (rect.left + center.x);
+        let dy = clientY - (rect.top + center.y);
+        const len = Math.hypot(dx, dy);
+        if (len > maxR) { dx = (dx / len) * maxR; dy = (dy / len) * maxR; }
+        knob.style.left = `${center.x + dx - 29}px`;
+        knob.style.top = `${center.y + dy - 29}px`;
+        mobileInput.dx = dx / maxR;
+        mobileInput.dy = dy / maxR;
+      }
+
+      function resetKnob() {
+        knob.style.left = "41px";
+        knob.style.top = "41px";
+        mobileInput.active = false;
+        mobileInput.dx = 0;
+        mobileInput.dy = 0;
+        mobileInput.pointerId = null;
+      }
+
+      window.addEventListener("pointerdown", e => {
+        if (!coarsePointerQuery.matches || !e.isPrimary) return;
+        zone.style.left = `${e.clientX - 70}px`;
+        zone.style.top = `${e.clientY - 70}px`;
+        zone.style.bottom = "auto";
+        center = { x: 70, y: 70 };
+        mobileInput.active = true;
+        mobileInput.pointerId = e.pointerId;
+        zone.setPointerCapture(e.pointerId);
+        updateKnob(e.clientX, e.clientY);
+      });
+
+      window.addEventListener("pointermove", e => {
+        if (!mobileInput.active || e.pointerId !== mobileInput.pointerId) return;
+        updateKnob(e.clientX, e.clientY);
+      });
+
+      window.addEventListener("pointerup", e => {
+        if (e.pointerId !== mobileInput.pointerId) return;
+        resetKnob();
+      });
+
+      window.addEventListener("pointercancel", resetKnob);
+
+      coarsePointerQuery.addEventListener("change", e => {
+        if (e.matches) zone.style.display = "block";
+        else { zone.style.display = "none"; resetKnob(); }
+      });
+    }
+
+    loadGame();
+    document.getElementById("stage").innerText = stageLevel;
+    generateMaze(mazeW, mazeH);
+    buildWorld();
+    setupSettingsMenu();
+    setupJoystick();
+    app.ticker.add(update);
+  </script>
 </body>
-
 </html>
