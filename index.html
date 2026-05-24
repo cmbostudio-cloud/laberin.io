@@ -153,6 +153,10 @@
         <div id="joystick-knob"></div>
     </div>
 
+    <div id="joystick-zone">
+        <div id="joystick-knob"></div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.x/dist/pixi.min.js"></script>
 
     <script>
@@ -379,6 +383,20 @@
                     maze[y]?.[x + 1]
 
                 ].filter(v => v === 0).length;
+
+                const horizontalOpen =
+                    maze[y]?.[x - 1] === 0 &&
+                    maze[y]?.[x + 1] === 0;
+
+                const verticalOpen =
+                    maze[y - 1]?.[x] === 0 &&
+                    maze[y + 1]?.[x] === 0;
+
+                // 좁은 통로(양방향 1칸)에서는 톱날이 길을 완전히 차단할 수 있으므로 생성 금지
+                if (openCount <= 2 && (horizontalOpen || verticalOpen)) {
+                    i--;
+                    continue;
+                }
 
                 const horizontalOpen =
                     maze[y]?.[x - 1] === 0 &&
@@ -1001,6 +1019,84 @@
             window.addEventListener("keydown", e => {
                 if (e.key === "Escape") {
                     ui.style.display = "none";
+                }
+            });
+        }
+
+        function setupJoystick() {
+
+            const coarsePointerQuery =
+                window.matchMedia("(pointer: coarse)");
+
+            const isTouchDevice =
+                coarsePointerQuery.matches;
+
+            if (!isTouchDevice) return;
+
+            const zone =
+                document.getElementById("joystick-zone");
+            const knob =
+                document.getElementById("joystick-knob");
+
+            zone.style.display = "block";
+
+            const center = { x: 70, y: 70 };
+            const maxR = 45;
+
+            function updateKnob(clientX, clientY) {
+
+                const rect = zone.getBoundingClientRect();
+                let dx = clientX - (rect.left + center.x);
+                let dy = clientY - (rect.top + center.y);
+
+                const len = Math.hypot(dx, dy);
+
+                if (len > maxR) {
+                    dx = dx / len * maxR;
+                    dy = dy / len * maxR;
+                }
+
+                knob.style.left = `${center.x + dx - 29}px`;
+                knob.style.top = `${center.y + dy - 29}px`;
+
+                mobileInput.dx = dx / maxR;
+                mobileInput.dy = dy / maxR;
+            }
+
+            function resetKnob() {
+                knob.style.left = "41px";
+                knob.style.top = "41px";
+                mobileInput.active = false;
+                mobileInput.dx = 0;
+                mobileInput.dy = 0;
+                mobileInput.pointerId = null;
+            }
+
+            zone.addEventListener("pointerdown", e => {
+                mobileInput.active = true;
+                mobileInput.pointerId = e.pointerId;
+                zone.setPointerCapture(e.pointerId);
+                updateKnob(e.clientX, e.clientY);
+            });
+
+            zone.addEventListener("pointermove", e => {
+                if (!mobileInput.active || e.pointerId !== mobileInput.pointerId) return;
+                updateKnob(e.clientX, e.clientY);
+            });
+
+            zone.addEventListener("pointerup", e => {
+                if (e.pointerId !== mobileInput.pointerId) return;
+                resetKnob();
+            });
+
+            zone.addEventListener("pointercancel", resetKnob);
+
+            coarsePointerQuery.addEventListener("change", e => {
+                if (e.matches) {
+                    zone.style.display = "block";
+                } else {
+                    zone.style.display = "none";
+                    resetKnob();
                 }
             });
         }
