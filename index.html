@@ -605,9 +605,16 @@
                     const ty =
                         Math.floor(saw.y / TILE);
 
+                    const entersHorizontalChoke =
+                        maze[ty - 1]?.[tx] === 1 &&
+                        maze[ty + 1]?.[tx] === 1 &&
+                        maze[ty]?.[tx - 1] === 0 &&
+                        maze[ty]?.[tx + 1] === 0;
+
                     if (
                         tx <= 0 ||
                         tx >= mazeW - 1 ||
+                        entersHorizontalChoke ||
                         (!saw.ghost && maze[ty][tx] === 1) ||
                         Math.abs(
                             nextX - saw.startX
@@ -633,9 +640,16 @@
                     const ty =
                         Math.floor(nextY / TILE);
 
+                    const entersVerticalChoke =
+                        maze[ty]?.[tx - 1] === 1 &&
+                        maze[ty]?.[tx + 1] === 1 &&
+                        maze[ty - 1]?.[tx] === 0 &&
+                        maze[ty + 1]?.[tx] === 0;
+
                     if (
                         ty <= 0 ||
                         ty >= mazeH - 1 ||
+                        entersVerticalChoke ||
                         (!saw.ghost && maze[ty][tx] === 1) ||
                         Math.abs(
                             nextY - saw.startY
