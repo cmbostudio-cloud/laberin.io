@@ -70,6 +70,7 @@
     window.addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
 
     const player = { x: 0, y: 0, speed: 2.8 };
+    const chaser = { x: 0, y: 0, radius: 10, speedFactor: 1 / 3 };
     const spawn = { x: 0, y: 0 };
     const exit = { x: 0, y: 0 };
 
@@ -79,6 +80,18 @@
 
     const playerGraphic = new PIXI.Graphics();
     const exitGraphic = new PIXI.Graphics();
+    const chaserGraphic = new PIXI.Graphics();
+
+    const darkness = new PIXI.Graphics();
+    darkness.blendMode = PIXI.BLEND_MODES.NORMAL;
+    app.stage.addChild(darkness);
+
+    const warningHud = document.createElement("div");
+    warningHud.id = "warning-hud";
+    warningHud.style.cssText = "position:fixed;top:30px;left:50%;transform:translateX(-50%);z-index:140;color:#ff4d4d;font-family:monospace;text-align:center;text-shadow:0 0 8px rgba(255,70,70,0.9);letter-spacing:2px;pointer-events:none;";
+    warningHud.innerHTML = `<div style="font-size:54px;line-height:1.1;">SOMETHING IS APPROACHING</div><div id="distance-text" style="font-size:42px;margin-top:8px;">DISTANCE: [000]m</div>`;
+    document.body.appendChild(warningHud);
+    const distanceText = document.getElementById("distance-text");
 
     function saveGame() {
       localStorage.setItem("laberin-save", JSON.stringify({ stageLevel, mazeW, mazeH }));
@@ -107,6 +120,8 @@
     function restartMap() {
       player.x = spawn.x;
       player.y = spawn.y;
+      chaser.x = exit.x;
+      chaser.y = exit.y;
     }
 
     function findFarthestOpenTile(startX, startY) {
@@ -161,6 +176,8 @@
       const farthest = findFarthestOpenTile(1, 1);
       exit.x = farthest.x * TILE + TILE / 2;
       exit.y = farthest.y * TILE + TILE / 2;
+      chaser.x = exit.x;
+      chaser.y = exit.y;
     }
 
     function buildWorld() {
@@ -186,6 +203,7 @@
         }
       }
       world.addChild(exitGraphic);
+      world.addChild(chaserGraphic);
       world.addChild(playerGraphic);
     }
 
@@ -216,6 +234,55 @@
       return maze[ty][tx] === 1;
     }
 
+
+    function drawChaser() {
+      chaserGraphic.clear();
+      chaserGraphic.beginFill(0xff2222);
+      chaserGraphic.drawCircle(0, 0, chaser.radius);
+      chaserGraphic.beginFill(0xffa0a0);
+      chaserGraphic.drawRect(-2, -2, 2, 2);
+      chaserGraphic.endFill();
+      chaserGraphic.x = chaser.x;
+      chaserGraphic.y = chaser.y;
+    }
+
+    function moveChaser() {
+      const dx = player.x - chaser.x;
+      const dy = player.y - chaser.y;
+      const len = Math.hypot(dx, dy);
+      if (len === 0) return;
+      const speed = player.speed * chaser.speedFactor;
+      chaser.x += (dx / len) * speed;
+      chaser.y += (dy / len) * speed;
+    }
+
+    function drawDarkness() {
+      const spotlightRadius = 160;
+      const px = player.x * CAMERA_ZOOM + world.x;
+      const py = player.y * CAMERA_ZOOM + world.y;
+      darkness.clear();
+      darkness.beginFill(0x000000, 0.88);
+      darkness.drawRect(0, 0, app.screen.width, app.screen.height);
+      darkness.endFill();
+
+      darkness.beginHole();
+      darkness.drawCircle(px, py, spotlightRadius);
+      darkness.endHole();
+
+      darkness.lineStyle(0);
+      for (let r = spotlightRadius + 6; r < spotlightRadius + 52; r += 8) {
+        const alpha = Math.max(0, 0.12 - (r - spotlightRadius) * 0.0022);
+        darkness.beginFill(0xffffff, alpha);
+        darkness.drawCircle(px, py, r);
+        darkness.endFill();
+      }
+    }
+
+    function updateWarning() {
+      const distPx = Math.hypot(player.x - chaser.x, player.y - chaser.y);
+      const distMeters = Math.max(0, Math.floor(distPx / TILE * 10));
+      distanceText.textContent = `DISTANCE: [${String(distMeters).padStart(3, "0")}]m`;
+    }
     function movePlayer() {
       let dx = 0, dy = 0;
       if (keys["w"] || keys["arrowup"]) dy -= 1;
@@ -260,9 +327,13 @@
 
     function update() {
       movePlayer();
+      moveChaser();
       cameraFollow();
       drawPlayer();
       drawExit();
+      drawChaser();
+      drawDarkness();
+      updateWarning();
       checkExit();
     }
 
