@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>laberin.io</title>
+
+    <style>
+        html,
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #101010;
+            font-family: monospace;
+        }
+
+        canvas {
+            display: block;
+            image-rendering: pixelated;
+        }
+
+        #ui {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 100;
+
+            color: white;
+
+            background: rgba(0, 0, 0, 0.45);
+
+            border: 1px solid #444;
+
+            padding: 10px;
+
+            min-width: 220px;
+        }
+
+        #title {
+            color: #7df9ff;
+            font-weight: bold;
+            margin-bottom: 6px;
+        }
+
+        button {
+            width: 100%;
+            margin-top: 6px;
+
+            background: #222;
+            color: white;
+
+            border: 1px solid #555;
+
+            padding: 7px;
+
+            cursor: pointer;
+
+            font-family: monospace;
+        }
+
+        button:hover {
+            background: #333;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="ui">
+
+        <div id="title">
+            laberin.io
+        </div>
+
+        <div>
+            Stage:
+            <span id="stage">1</span>
+        </div>
+
+        <div style="margin-top:6px;">
+            WASD / Arrow Keys
+        </div>
+
+        <button onclick="restartMap()">
+            Restart Current Map
+        </button>
+
+        <button onclick="resetGame()">
+            Reset Entire Save
+        </button>
+
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.x/dist/pixi.min.js"></script>
+
+    <script>
+
+        const app = new PIXI.Application({
+            resizeTo: window,
+            background: "#101010",
+            antialias: false
+        });
+
+        document.body.appendChild(app.view);
+
+        const TILE = 32;
+        const PLAYER_RADIUS = 8;
+
+        // 현재보다 2.5배 확대
+        const CAMERA_ZOOM = 1.25;
+
+        let stageLevel = 1;
+
+        let mazeW = 15;
+        let mazeH = 15;
+
+        let maze = [];
+
+        const keys = {};
+
+        window.addEventListener("keydown", e => {
+            keys[e.key.toLowerCase()] = true;
+        });
+
+        window.addEventListener("keyup", e => {
+            keys[e.key.toLowerCase()] = false;
+        });
+
+        const player = {
+            x: 0,
+            y: 0,
+            speed: 2.8
+        };
+
+        const spawn = {
+            x: 0,
+            y: 0
+        };
+
+        const exit = {
+            x: 0,
+            y: 0
+        };
+
+        const saws = [];
+
+        const world = new PIXI.Container();
+
+        world.scale.set(CAMERA_ZOOM);
+
+        app.stage.addChild(world);
+
+        const playerGraphic = new PIXI.Graphics();
+        const exitGraphic = new PIXI.Graphics();
+        const arrowGraphic = new PIXI.Graphics();
+
+        function saveGame() {
+
+            localStorage.setItem(
+                "laberin-save",
+                JSON.stringify({
+                    stageLevel,
+                    mazeW,
+                    mazeH
+                })
+            );
+        }
+
+        function loadGame() {
+
+            const data =
+                localStorage.getItem("laberin-save");
+
+            if (!data) return;
+
+            try {
+
+                const save = JSON.parse(data);
+
+                stageLevel = save.stageLevel || 1;
+                mazeW = save.mazeW || 15;
+                mazeH = save.mazeH || 15;
+
+            } catch (e) { }
+        }
+
+        function resetGame() {
+
+            localStorage.removeItem("laberin-save");
+
+            stageLevel = 1;
+
+            mazeW = 15;
+            mazeH = 15;
+
+            generateMaze(mazeW, mazeH);
+
+            buildWorld();
+        }
+
+        function restartMap() {
+
+            player.x = spawn.x;
+            player.y = spawn.y;
+        }
+
+        function generateMaze(w, h) {
+
+            maze = [];
+
+            for (let y = 0; y < h; y++) {
+
+                maze[y] = [];
+
+                for (let x = 0; x < w; x++) {
+                    maze[y][x] = 1;
+                }
+            }
+
+            function carve(cx, cy) {
+
+                const dirs = [
+                    [0, -2],
+                    [2, 0],
+                    [0, 2],
+                    [-2, 0]
+                ];
+
+                dirs.sort(() => Math.random() - 0.5);
+
+                for (const [dx, dy] of dirs) {
+
+                    const nx = cx + dx;
+                    const ny = cy + dy;
+
+                    if (
+                        nx > 0 &&
+                        ny > 0 &&
+                        nx < w - 1 &&
+                        ny < h - 1 &&
+                        maze[ny][nx] === 1
+                    ) {
+
+                        maze[ny][nx] = 0;
+
+                        maze[
+                            cy + dy / 2
+                        ][
+                            cx + dx / 2
+                        ] = 0;
+
+                        carve(nx, ny);
+                    }
+                }
+            }
+
+            maze[1][1] = 0;
+
+            carve(1, 1);
+
+            spawn.x = TILE * 1.5;
+            spawn.y = TILE * 1.5;
+
+            player.x = spawn.x;
+            player.y = spawn.y;
+
+            exit.x =
+                (w - 2) * TILE + TILE / 2;
+
+            exit.y =
+                (h - 2) * TILE + TILE / 2;
+
+            maze[h - 2][w - 2] = 0;
+
+            generateSaws();
+        }
+
+        function generateSaws() {
+
+            saws.length = 0;
+
+            const count =
+                Math.floor(stageLevel * 1.5);
+
+            for (let i = 0; i < count; i++) {
+
+                let x, y;
+
+                do {
+
+                    x =
+                        Math.floor(
+                            Math.random() * mazeW
+                        );
+
+                    y =
+                        Math.floor(
+                            Math.random() * mazeH
+                        );
+
+                } while (
+                    maze[y][x] !== 0 ||
+                    (x < 3 && y < 3)
+                );
+
+                const openCount = [
+
+                    maze[y - 1]?.[x],
+                    maze[y + 1]?.[x],
+                    maze[y]?.[x - 1],
+                    maze[y]?.[x + 1]
+
+                ].filter(v => v === 0).length;
+
+                const horizontal =
+                    Math.random() > 0.5;
+
+                saws.push({
+
+                    x:
+                        x * TILE + TILE / 2,
+
+                    y:
+                        y * TILE + TILE / 2,
+
+                    startX:
+                        x * TILE + TILE / 2,
+
+                    startY:
+                        y * TILE + TILE / 2,
+
+                    dir: 1,
+
+                    // 2배 느리게
+                    speed:
+                        0.75 +
+                        Math.random() * 0.5,
+
+                    // 좁은 길이면 짧게 이동
+                    range:
+
+                        openCount <= 2
+
+                            ? TILE * (
+                                1 + Math.random()
+                            )
+
+                            : TILE * (
+                                2 + Math.random() * 4
+                            ),
+
+                    horizontal,
+
+                    // 벽 관통 톱날
+                    ghost:
+                        Math.random() < 0.35,
+
+                    graphic:
+                        new PIXI.Graphics()
+                });
+            }
+        }
+
+        function buildWorld() {
+
+            world.removeChildren();
+
+            for (let y = 0; y < mazeH; y++) {
+
+                for (let x = 0; x < mazeW; x++) {
+
+                    const g =
+                        new PIXI.Graphics();
+
+                    if (maze[y][x] === 1) {
+
+                        g.beginFill(0x2d2d2d);
+
+                        g.drawRect(
+                            0,
+                            0,
+                            TILE,
+                            TILE
+                        );
+
+                        g.beginFill(0x404040);
+
+                        for (
+                            let py = 0;
+                            py < TILE;
+                            py += 8
+                        ) {
+
+                            for (
+                                let px = 0;
+                                px < TILE;
+                                px += 8
+                            ) {
+
+                                g.drawRect(
+                                    px,
+                                    py,
+                                    3,
+                                    3
+                                );
+                            }
+                        }
+
+                    } else {
+
+                        g.beginFill(0x1a1a1a);
+
+                        g.drawRect(
+                            0,
+                            0,
+                            TILE,
+                            TILE
+                        );
+
+                        g.beginFill(0x242424);
+
+                        for (
+                            let py = 0;
+                            py < TILE;
+                            py += 8
+                        ) {
+
+                            for (
+                                let px = 0;
+                                px < TILE;
+                                px += 8
+                            ) {
+
+                                g.drawRect(
+                                    px,
+                                    py,
+                                    1,
+                                    1
+                                );
+                            }
+                        }
+                    }
+
+                    g.endFill();
+
+                    g.x = x * TILE;
+                    g.y = y * TILE;
+
+                    world.addChild(g);
+                }
+            }
+
+            world.addChild(exitGraphic);
+
+            for (const saw of saws) {
+                world.addChild(saw.graphic);
+            }
+
+            world.addChild(arrowGraphic);
+            world.addChild(playerGraphic);
+        }
+
+        function drawPlayer() {
+
+            playerGraphic.clear();
+
+            playerGraphic.beginFill(0xffffff);
+
+            playerGraphic.drawCircle(
+                0,
+                0,
+                PLAYER_RADIUS
+            );
+
+            playerGraphic.beginFill(0x7df9ff);
+
+            playerGraphic.drawRect(
+                -3,
+                -3,
+                3,
+                3
+            );
+
+            playerGraphic.endFill();
+
+            playerGraphic.x = player.x;
+            playerGraphic.y = player.y;
+        }
+
+        function drawExit() {
+
+            exitGraphic.clear();
+
+            exitGraphic.beginFill(0x66ff88);
+
+            exitGraphic.drawRect(
+                -8,
+                -8,
+                16,
+                16
+            );
+
+            exitGraphic.endFill();
+
+            exitGraphic.x = exit.x;
+            exitGraphic.y = exit.y;
+        }
+
+        function drawArrow() {
+
+            arrowGraphic.clear();
+
+            const dx = exit.x - player.x;
+            const dy = exit.y - player.y;
+
+            const angle =
+                Math.atan2(dy, dx);
+
+            const offset = 22;
+
+            arrowGraphic.beginFill(0xffdd55);
+
+            arrowGraphic.moveTo(12, 0);
+            arrowGraphic.lineTo(-8, -6);
+            arrowGraphic.lineTo(-8, 6);
+
+            arrowGraphic.endFill();
+
+            arrowGraphic.x =
+                player.x +
+                Math.cos(angle) * offset;
+
+            arrowGraphic.y =
+                player.y +
+                Math.sin(angle) * offset;
+
+            arrowGraphic.rotation = angle;
+        }
+
+        function drawSaws() {
+
+            for (const saw of saws) {
+
+                if (saw.horizontal) {
+
+                    const nextX =
+                        saw.x +
+                        saw.speed * saw.dir;
+
+                    const tx =
+                        Math.floor(nextX / TILE);
+
+                    const ty =
+                        Math.floor(saw.y / TILE);
+
+                    if (
+                        tx <= 0 ||
+                        tx >= mazeW - 1 ||
+                        (!saw.ghost && maze[ty][tx] === 1) ||
+                        Math.abs(
+                            nextX - saw.startX
+                        ) > saw.range
+                    ) {
+
+                        saw.dir *= -1;
+
+                    } else {
+
+                        saw.x = nextX;
+                    }
+
+                } else {
+
+                    const nextY =
+                        saw.y +
+                        saw.speed * saw.dir;
+
+                    const tx =
+                        Math.floor(saw.x / TILE);
+
+                    const ty =
+                        Math.floor(nextY / TILE);
+
+                    if (
+                        ty <= 0 ||
+                        ty >= mazeH - 1 ||
+                        (!saw.ghost && maze[ty][tx] === 1) ||
+                        Math.abs(
+                            nextY - saw.startY
+                        ) > saw.range
+                    ) {
+
+                        saw.dir *= -1;
+
+                    } else {
+
+                        saw.y = nextY;
+                    }
+                }
+
+                saw.graphic.clear();
+
+                saw.graphic.beginFill(
+
+                    saw.ghost
+
+                        ? 0xd9d9d9
+
+                        : 0xd9d9d9
+                );
+
+                const teeth = 12;
+
+                for (let i = 0; i < teeth; i++) {
+
+                    const a1 =
+                        (Math.PI * 2 / teeth) * i;
+
+                    const a2 = a1 + 0.2;
+
+                    saw.graphic.moveTo(0, 0);
+
+                    saw.graphic.lineTo(
+                        Math.cos(a1) * 14,
+                        Math.sin(a1) * 14
+                    );
+
+                    saw.graphic.lineTo(
+                        Math.cos(a2) * 8,
+                        Math.sin(a2) * 8
+                    );
+                }
+
+                saw.graphic.drawCircle(
+                    0,
+                    0,
+                    10
+                );
+
+                saw.graphic.endFill();
+
+                saw.graphic.rotation += 0.2;
+
+                saw.graphic.x = saw.x;
+                saw.graphic.y = saw.y;
+
+                const dist =
+                    Math.hypot(
+                        player.x - saw.x,
+                        player.y - saw.y
+                    );
+
+                if (dist < 16) {
+                    restartMap();
+                }
+            }
+        }
+
+        function isWall(px, py) {
+
+            const tx =
+                Math.floor(px / TILE);
+
+            const ty =
+                Math.floor(py / TILE);
+
+            if (
+                tx < 0 ||
+                ty < 0 ||
+                tx >= mazeW ||
+                ty >= mazeH
+            ) return true;
+
+            return maze[ty][tx] === 1;
+        }
+
+        function movePlayer() {
+
+            let dx = 0;
+            let dy = 0;
+
+            if (
+                keys["w"] ||
+                keys["arrowup"]
+            ) dy -= 1;
+
+            if (
+                keys["s"] ||
+                keys["arrowdown"]
+            ) dy += 1;
+
+            if (
+                keys["a"] ||
+                keys["arrowleft"]
+            ) dx -= 1;
+
+            if (
+                keys["d"] ||
+                keys["arrowright"]
+            ) dx += 1;
+
+            const len =
+                Math.hypot(dx, dy);
+
+            if (len > 0) {
+
+                dx /= len;
+                dy /= len;
+            }
+
+            const nx =
+                player.x +
+                dx * player.speed;
+
+            const ny =
+                player.y +
+                dy * player.speed;
+
+            const pad = 7;
+
+            if (
+                !isWall(nx - pad, player.y - pad) &&
+                !isWall(nx + pad, player.y - pad) &&
+                !isWall(nx - pad, player.y + pad) &&
+                !isWall(nx + pad, player.y + pad)
+            ) {
+                player.x = nx;
+            }
+
+            if (
+                !isWall(player.x - pad, ny - pad) &&
+                !isWall(player.x + pad, ny - pad) &&
+                !isWall(player.x - pad, ny + pad) &&
+                !isWall(player.x + pad, ny + pad)
+            ) {
+                player.y = ny;
+            }
+        }
+
+        function cameraFollow() {
+
+            const tx =
+                app.screen.width / 2 -
+                player.x * CAMERA_ZOOM;
+
+            const ty =
+                app.screen.height / 2 -
+                player.y * CAMERA_ZOOM;
+
+            world.x +=
+                (tx - world.x) * 0.08;
+
+            world.y +=
+                (ty - world.y) * 0.08;
+        }
+
+        function checkExit() {
+
+            const dist =
+                Math.hypot(
+                    player.x - exit.x,
+                    player.y - exit.y
+                );
+
+            if (dist < 18) {
+
+                stageLevel++;
+
+                document.getElementById(
+                    "stage"
+                ).innerText = stageLevel;
+
+                mazeW += 4;
+                mazeH += 4;
+
+                if (mazeW % 2 === 0)
+                    mazeW++;
+
+                if (mazeH % 2 === 0)
+                    mazeH++;
+
+                saveGame();
+
+                generateMaze(
+                    mazeW,
+                    mazeH
+                );
+
+                buildWorld();
+            }
+        }
+
+        function update() {
+
+            movePlayer();
+
+            cameraFollow();
+
+            drawPlayer();
+
+            drawExit();
+
+            drawArrow();
+
+            drawSaws();
+
+            checkExit();
+        }
+
+        loadGame();
+
+        document.getElementById(
+            "stage"
+        ).innerText = stageLevel;
+
+        generateMaze(
+            mazeW,
+            mazeH
+        );
+
+        buildWorld();
+
+        app.ticker.add(update);
+
+    </script>
+
+</body>
+
+</html>
