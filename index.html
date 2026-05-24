@@ -63,6 +63,38 @@
         button:hover {
             background: #333;
         }
+
+        #joystick-zone {
+            position: fixed;
+            left: 20px;
+            bottom: 20px;
+            width: 140px;
+            height: 140px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            z-index: 120;
+            touch-action: none;
+            display: none;
+        }
+
+        #joystick-knob {
+            position: absolute;
+            width: 58px;
+            height: 58px;
+            left: 41px;
+            top: 41px;
+            border-radius: 50%;
+            background: rgba(125, 249, 255, 0.65);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            pointer-events: none;
+        }
+
+        @media (pointer: fine) {
+            #joystick-zone {
+                display: none !important;
+            }
+        }
     </style>
 </head>
 
@@ -93,6 +125,10 @@
 
     </div>
 
+    <div id="joystick-zone">
+        <div id="joystick-knob"></div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.x/dist/pixi.min.js"></script>
 
     <script>
@@ -119,6 +155,12 @@
         let maze = [];
 
         const keys = {};
+        const mobileInput = {
+            active: false,
+            dx: 0,
+            dy: 0,
+            pointerId: null
+        };
 
         window.addEventListener("keydown", e => {
             keys[e.key.toLowerCase()] = true;
@@ -313,6 +355,20 @@
                     maze[y]?.[x + 1]
 
                 ].filter(v => v === 0).length;
+
+                const horizontalOpen =
+                    maze[y]?.[x - 1] === 0 &&
+                    maze[y]?.[x + 1] === 0;
+
+                const verticalOpen =
+                    maze[y - 1]?.[x] === 0 &&
+                    maze[y + 1]?.[x] === 0;
+
+                // 좁은 통로(양방향 1칸)에서는 톱날이 길을 완전히 차단할 수 있으므로 생성 금지
+                if (openCount <= 2 && (horizontalOpen || verticalOpen)) {
+                    i--;
+                    continue;
+                }
 
                 const horizontal =
                     Math.random() > 0.5;
@@ -555,9 +611,16 @@
                     const ty =
                         Math.floor(saw.y / TILE);
 
+                    const entersHorizontalChoke =
+                        maze[ty - 1]?.[tx] === 1 &&
+                        maze[ty + 1]?.[tx] === 1 &&
+                        maze[ty]?.[tx - 1] === 0 &&
+                        maze[ty]?.[tx + 1] === 0;
+
                     if (
                         tx <= 0 ||
                         tx >= mazeW - 1 ||
+                        entersHorizontalChoke ||
                         (!saw.ghost && maze[ty][tx] === 1) ||
                         Math.abs(
                             nextX - saw.startX
@@ -583,9 +646,16 @@
                     const ty =
                         Math.floor(nextY / TILE);
 
+                    const entersVerticalChoke =
+                        maze[ty]?.[tx - 1] === 1 &&
+                        maze[ty]?.[tx + 1] === 1 &&
+                        maze[ty - 1]?.[tx] === 0 &&
+                        maze[ty + 1]?.[tx] === 0;
+
                     if (
                         ty <= 0 ||
                         ty >= mazeH - 1 ||
+                        entersVerticalChoke ||
                         (!saw.ghost && maze[ty][tx] === 1) ||
                         Math.abs(
                             nextY - saw.startY
@@ -701,6 +771,9 @@
                 keys["arrowright"]
             ) dx += 1;
 
+            dx += mobileInput.dx;
+            dy += mobileInput.dy;
+
             const len =
                 Math.hypot(dx, dy);
 
@@ -809,6 +882,84 @@
             checkExit();
         }
 
+        function setupJoystick() {
+
+            const coarsePointerQuery =
+                window.matchMedia("(pointer: coarse)");
+
+            const isTouchDevice =
+                coarsePointerQuery.matches;
+
+            if (!isTouchDevice) return;
+
+            const zone =
+                document.getElementById("joystick-zone");
+            const knob =
+                document.getElementById("joystick-knob");
+
+            zone.style.display = "block";
+
+            const center = { x: 70, y: 70 };
+            const maxR = 45;
+
+            function updateKnob(clientX, clientY) {
+
+                const rect = zone.getBoundingClientRect();
+                let dx = clientX - (rect.left + center.x);
+                let dy = clientY - (rect.top + center.y);
+
+                const len = Math.hypot(dx, dy);
+
+                if (len > maxR) {
+                    dx = dx / len * maxR;
+                    dy = dy / len * maxR;
+                }
+
+                knob.style.left = `${center.x + dx - 29}px`;
+                knob.style.top = `${center.y + dy - 29}px`;
+
+                mobileInput.dx = dx / maxR;
+                mobileInput.dy = dy / maxR;
+            }
+
+            function resetKnob() {
+                knob.style.left = "41px";
+                knob.style.top = "41px";
+                mobileInput.active = false;
+                mobileInput.dx = 0;
+                mobileInput.dy = 0;
+                mobileInput.pointerId = null;
+            }
+
+            zone.addEventListener("pointerdown", e => {
+                mobileInput.active = true;
+                mobileInput.pointerId = e.pointerId;
+                zone.setPointerCapture(e.pointerId);
+                updateKnob(e.clientX, e.clientY);
+            });
+
+            zone.addEventListener("pointermove", e => {
+                if (!mobileInput.active || e.pointerId !== mobileInput.pointerId) return;
+                updateKnob(e.clientX, e.clientY);
+            });
+
+            zone.addEventListener("pointerup", e => {
+                if (e.pointerId !== mobileInput.pointerId) return;
+                resetKnob();
+            });
+
+            zone.addEventListener("pointercancel", resetKnob);
+
+            coarsePointerQuery.addEventListener("change", e => {
+                if (e.matches) {
+                    zone.style.display = "block";
+                } else {
+                    zone.style.display = "none";
+                    resetKnob();
+                }
+            });
+        }
+
         loadGame();
 
         document.getElementById(
@@ -821,6 +972,8 @@
         );
 
         buildWorld();
+
+        setupJoystick();
 
         app.ticker.add(update);
 
