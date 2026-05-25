@@ -492,8 +492,11 @@ mobileInput.pointerId = null;
 
 function placeZone(clientX, clientY) {
 const margin = 8;
-const left = Math.max(margin, Math.min(window.innerWidth - zone.clientWidth - margin, clientX - zone.clientWidth / 2));
-const top = Math.max(margin, Math.min(window.innerHeight - zone.clientHeight - margin, clientY - zone.clientHeight / 2));
+const computed = window.getComputedStyle(zone);
+const zoneW = parseFloat(computed.width) || zone.clientWidth;
+const zoneH = parseFloat(computed.height) || zone.clientHeight;
+const left = Math.max(margin, Math.min(window.innerWidth - zoneW - margin, clientX - zoneW / 2));
+const top = Math.max(margin, Math.min(window.innerHeight - zoneH - margin, clientY - zoneH / 2));
 zone.style.left = `${left}px`;
 zone.style.top = `${top}px`;
 zone.style.bottom = "auto";
