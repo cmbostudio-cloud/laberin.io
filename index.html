@@ -448,7 +448,9 @@ window.addEventListener("keydown", e => { if (e.key === "Escape") menu.style.dis
 
 function setupJoystick() {
 const coarsePointerQuery = window.matchMedia("(pointer: coarse)");
-if (!coarsePointerQuery.matches) return;
+const forceJoystickDebug = new URLSearchParams(window.location.search).has("joystickDebug");
+const joystickEnabled = () => coarsePointerQuery.matches || forceJoystickDebug;
+if (!joystickEnabled()) return;
 
 const zone = document.createElement("div");
 zone.id = "joystick-zone";
@@ -503,7 +505,7 @@ zone.style.bottom = "auto";
 }
 
 window.addEventListener("pointerdown", e => {
-if (!coarsePointerQuery.matches || !e.isPrimary) return;
+if (!joystickEnabled() || !e.isPrimary) return;
 if (e.clientX > window.innerWidth * 0.6) return;
 placeZone(e.clientX, e.clientY);
 zone.style.display = "block";
@@ -530,7 +532,7 @@ resetKnob();
 });
 
 coarsePointerQuery.addEventListener("change", e => {
-if (!e.matches) resetKnob();
+if (!e.matches && !forceJoystickDebug) resetKnob();
 });
 }
 
