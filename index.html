@@ -51,6 +51,7 @@ button { font-size: 7px; }
 <div id="title">laberin.io</div>
 <div>Stage: <span id="stage">1</span></div>
 <div style="margin-top:6px;">WASD / Arrow Keys</div>
+<div style="margin-top:4px;">Key: <span id="key-status">Not found</span></div>
 </div>
 
 <div id="settings-menu">
@@ -82,6 +83,7 @@ const player = { x: 0, y: 0, speed: 1.4 };
 const chaser = { x: 0, y: 0, radius: 10, speedFactor: 1 / 3 };
 const spawn = { x: 0, y: 0 };
 const exit = { x: 0, y: 0 };
+const keyItem = { x: 0, y: 0, collected: false };
 
 const world = new PIXI.Container();
 world.scale.set(CAMERA_ZOOM);
@@ -89,6 +91,7 @@ app.stage.addChild(world);
 
 const playerGraphic = new PIXI.Graphics();
 const exitGraphic = new PIXI.Graphics();
+const keyGraphic = new PIXI.Graphics();
 const chaserGraphic = new PIXI.Graphics();
 
 const darkness = new PIXI.Graphics();
@@ -132,6 +135,12 @@ player.x = spawn.x;
 player.y = spawn.y;
 chaser.x = exit.x;
 chaser.y = exit.y;
+const farthest = findFarthestOpenTile(1, 1);
+const keyTile = findRandomOpenTile([{ x: 1, y: 1 }, { x: farthest.x, y: farthest.y }]);
+keyItem.x = keyTile.x * TILE + TILE / 2;
+keyItem.y = keyTile.y * TILE + TILE / 2;
+keyItem.collected = false;
+document.getElementById("key-status").innerText = "Not found";
 }
 
 function findFarthestOpenTile(startX, startY) {
@@ -152,6 +161,20 @@ queue.push({ x: nx, y: ny, d: cur.d + 1 });
 }
 }
 return farthest;
+}
+
+function findRandomOpenTile(exclude = []) {
+const banned = new Set(exclude.map(p => `${p.x},${p.y}`));
+const openTiles = [];
+for (let y = 0; y < mazeH; y++) {
+for (let x = 0; x < mazeW; x++) {
+if (maze[y][x] !== 0) continue;
+const key = `${x},${y}`;
+if (!banned.has(key)) openTiles.push({ x, y });
+}
+}
+if (openTiles.length === 0) return { x: 1, y: 1 };
+return openTiles[Math.floor(Math.random() * openTiles.length)];
 }
 
 function generateMaze(w, h) {
@@ -188,6 +211,12 @@ exit.x = farthest.x * TILE + TILE / 2;
 exit.y = farthest.y * TILE + TILE / 2;
 chaser.x = exit.x;
 chaser.y = exit.y;
+
+const keyTile = findRandomOpenTile([{ x: 1, y: 1 }, { x: farthest.x, y: farthest.y }]);
+keyItem.x = keyTile.x * TILE + TILE / 2;
+keyItem.y = keyTile.y * TILE + TILE / 2;
+keyItem.collected = false;
+document.getElementById("key-status").innerText = "Not found";
 }
 
 function buildWorld() {
@@ -213,6 +242,7 @@ world.addChild(g);
 }
 }
 world.addChild(exitGraphic);
+world.addChild(keyGraphic);
 world.addChild(chaserGraphic);
 world.addChild(playerGraphic);
 }
@@ -230,11 +260,32 @@ playerGraphic.y = player.y;
 
 function drawExit() {
 exitGraphic.clear();
-exitGraphic.beginFill(0x66ff88);
+exitGraphic.beginFill(keyItem.collected ? 0x66ff88 : 0x446655);
 exitGraphic.drawRect(-8, -8, 16, 16);
 exitGraphic.endFill();
 exitGraphic.x = exit.x;
 exitGraphic.y = exit.y;
+}
+
+
+function drawKeyItem() {
+keyGraphic.clear();
+if (keyItem.collected) {
+keyGraphic.visible = false;
+return;
+}
+keyGraphic.visible = true;
+keyGraphic.beginFill(0xffdd55);
+keyGraphic.drawCircle(0, 0, 6);
+keyGraphic.beginFill(0x101010);
+keyGraphic.drawCircle(0, 0, 2.5);
+keyGraphic.beginFill(0xffdd55);
+keyGraphic.drawRect(4, -2, 10, 4);
+keyGraphic.drawRect(11, -2, 2, 6);
+keyGraphic.drawRect(8, -2, 2, 5);
+keyGraphic.endFill();
+keyGraphic.x = keyItem.x;
+keyGraphic.y = keyItem.y;
 }
 
 function isWall(px, py) {
@@ -342,7 +393,17 @@ world.x += (tx - world.x) * 0.08;
 world.y += (ty - world.y) * 0.08;
 }
 
+function checkKeyPickup() {
+if (keyItem.collected) return;
+const dist = Math.hypot(player.x - keyItem.x, player.y - keyItem.y);
+if (dist < 18) {
+keyItem.collected = true;
+document.getElementById("key-status").innerText = "Acquired";
+}
+}
+
 function checkExit() {
+if (!keyItem.collected) return;
 const dist = Math.hypot(player.x - exit.x, player.y - exit.y);
 if (dist < 18) {
 stageLevel ++;
@@ -367,10 +428,12 @@ moveChaser();
 cameraFollow();
 drawPlayer();
 drawExit();
+drawKeyItem();
 drawChaser();
 drawDarkness();
 updateWarning();
 checkCaught();
+checkKeyPickup();
 checkExit();
 }
 
@@ -387,26 +450,27 @@ function setupJoystick() {
 const coarsePointerQuery = window.matchMedia("(pointer: coarse)");
 if (!coarsePointerQuery.matches) return;
 
-
 const zone = document.createElement("div");
 zone.id = "joystick-zone";
 const knob = document.createElement("div");
 knob.id = "joystick-knob";
 zone.appendChild(knob);
 document.body.appendChild(zone);
-zone.style.display = "block";
+zone.style.display = "none";
 
 const maxR = 45;
-let center = { x: 70, y: 70 };
+const knobHalf = 29;
 
 function updateKnob(clientX, clientY) {
 const rect = zone.getBoundingClientRect();
-let dx = clientX - (rect.left + center.x);
-let dy = clientY - (rect.top + center.y);
+const centerX = rect.width / 2;
+const centerY = rect.height / 2;
+let dx = clientX - (rect.left + centerX);
+let dy = clientY - (rect.top + centerY);
 const len = Math.hypot(dx, dy);
 if (len > maxR) { dx = (dx / len) * maxR; dy = (dy / len) * maxR; }
-knob.style.left = `${center.x + dx - 29}px`;
-knob.style.top = `${center.y + dy - 29}px`;
+knob.style.left = `${centerX + dx - knobHalf}px`;
+knob.style.top = `${centerY + dy - knobHalf}px`;
 mobileInput.dx = dx / maxR;
 mobileInput.dy = dy / maxR;
 }
@@ -414,15 +478,27 @@ mobileInput.dy = dy / maxR;
 function resetKnob() {
 knob.style.left = `${zone.clientWidth / 2 - knob.clientWidth / 2}px`;
 knob.style.top = `${zone.clientHeight / 2 - knob.clientHeight / 2}px`;
+zone.style.display = "none";
 mobileInput.active = false;
 mobileInput.dx = 0;
 mobileInput.dy = 0;
 mobileInput.pointerId = null;
 }
 
+function placeZone(clientX, clientY) {
+const margin = 8;
+const left = Math.max(margin, Math.min(window.innerWidth - zone.clientWidth - margin, clientX - zone.clientWidth / 2));
+const top = Math.max(margin, Math.min(window.innerHeight - zone.clientHeight - margin, clientY - zone.clientHeight / 2));
+zone.style.left = `${left}px`;
+zone.style.top = `${top}px`;
+zone.style.bottom = "auto";
+}
+
 window.addEventListener("pointerdown", e => {
 if (!coarsePointerQuery.matches || !e.isPrimary) return;
-center = { x: zone.clientWidth / 2, y: zone.clientHeight / 2 };
+if (e.clientX > window.innerWidth * 0.6) return;
+placeZone(e.clientX, e.clientY);
+zone.style.display = "block";
 mobileInput.active = true;
 mobileInput.pointerId = e.pointerId;
 zone.setPointerCapture(e.pointerId);
@@ -439,11 +515,13 @@ if (e.pointerId !== mobileInput.pointerId) return;
 resetKnob();
 });
 
-window.addEventListener("pointercancel", resetKnob);
+window.addEventListener("pointercancel", e => {
+if (e.pointerId !== mobileInput.pointerId) return;
+resetKnob();
+});
 
 coarsePointerQuery.addEventListener("change", e => {
-if (e.matches) zone.style.display = "block";
-else { zone.style.display = "none"; resetKnob(); }
+if (!e.matches) resetKnob();
 });
 }
 
