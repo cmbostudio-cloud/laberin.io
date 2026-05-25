@@ -355,7 +355,7 @@
       const speed = player.speed;
       const nx = player.x + dx * speed * len;
       const ny = player.y + dy * speed * len;
-      const pad = 7;
+      const pad = 5.5;
 
       if (!isWall(nx - pad, player.y - pad) && !isWall(nx + pad, player.y - pad) && !isWall(nx - pad, player.y + pad) && !isWall(nx + pad, player.y + pad)) player.x = nx;
       if (!isWall(player.x - pad, ny - pad) && !isWall(player.x + pad, ny - pad) && !isWall(player.x - pad, ny + pad) && !isWall(player.x + pad, ny + pad)) player.y = ny;
