@@ -171,7 +171,6 @@
       maze[1][1] = 0;
       carve(1, 1);
       widenCorridors();
-      placeTorches();
 
       spawn.x = TILE * 1.5;
       spawn.y = TILE * 1.5;
@@ -197,17 +196,6 @@
         }
       }
       maze = expanded;
-    }
-
-    function placeTorches() {
-      torchTiles = [];
-      for (let y = 1; y < mazeH - 1; y++) {
-        for (let x = 1; x < mazeW - 1; x++) {
-          if (maze[y][x] !== 0) continue;
-          if ((x === 1 && y === 1) || (Math.abs(x - Math.floor(exit.x / TILE)) < 2 && Math.abs(y - Math.floor(exit.y / TILE)) < 2)) continue;
-          if ((x + y) % 11 === 0) torchTiles.push({ x, y });
-        }
-      }
     }
 
     function buildWorld() {
