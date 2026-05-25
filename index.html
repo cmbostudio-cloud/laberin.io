@@ -74,6 +74,7 @@
     const chaser = { x: 0, y: 0, radius: 10, speedFactor: 1 / 3 };
     const spawn = { x: 0, y: 0 };
     const exit = { x: 0, y: 0 };
+    let torchTiles = [];
 
     const world = new PIXI.Container();
     world.scale.set(CAMERA_ZOOM);
@@ -219,6 +220,17 @@
           world.addChild(g);
         }
       }
+      for (const t of torchTiles) {
+        const torch = new PIXI.Graphics();
+        torch.beginFill(0xffaa33);
+        torch.drawRect(-2, -8, 4, 10);
+        torch.beginFill(0xffdd88);
+        torch.drawCircle(0, -9, 4);
+        torch.endFill();
+        torch.x = t.x * TILE + TILE / 2;
+        torch.y = t.y * TILE + TILE / 2;
+        world.addChild(torch);
+      }
       world.addChild(exitGraphic);
       world.addChild(chaserGraphic);
       world.addChild(playerGraphic);
@@ -284,6 +296,12 @@
 
       darkness.beginHole();
       darkness.drawCircle(px, py, spotlightRadius);
+      const torchRadius = TILE * 2;
+      for (const t of torchTiles) {
+        const tx = (t.x * TILE + TILE / 2) * CAMERA_ZOOM + world.x;
+        const ty = (t.y * TILE + TILE / 2) * CAMERA_ZOOM + world.y;
+        darkness.drawCircle(tx, ty, torchRadius);
+      }
       darkness.endHole();
 
       darkness.lineStyle(0);
