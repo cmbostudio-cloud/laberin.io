@@ -448,7 +448,9 @@ window.addEventListener("keydown", e => { if (e.key === "Escape") menu.style.dis
 
 function setupJoystick() {
 const coarsePointerQuery = window.matchMedia("(pointer: coarse)");
-if (!coarsePointerQuery.matches) return;
+const forceJoystickDebug = new URLSearchParams(window.location.search).has("joystickDebug");
+const joystickEnabled = () => coarsePointerQuery.matches || forceJoystickDebug;
+if (!joystickEnabled()) return;
 
 const zone = document.createElement("div");
 zone.id = "joystick-zone";
@@ -459,7 +461,6 @@ document.body.appendChild(zone);
 zone.style.display = "none";
 
 const maxR = 45;
-const knobHalf = 29;
 
 function updateKnob(clientX, clientY) {
 const rect = zone.getBoundingClientRect();
@@ -469,15 +470,21 @@ let dx = clientX - (rect.left + centerX);
 let dy = clientY - (rect.top + centerY);
 const len = Math.hypot(dx, dy);
 if (len > maxR) { dx = (dx / len) * maxR; dy = (dy / len) * maxR; }
-knob.style.left = `${centerX + dx - knobHalf}px`;
-knob.style.top = `${centerY + dy - knobHalf}px`;
+const knobHalfX = knob.clientWidth / 2;
+const knobHalfY = knob.clientHeight / 2;
+knob.style.left = `${centerX + dx - knobHalfX}px`;
+knob.style.top = `${centerY + dy - knobHalfY}px`;
 mobileInput.dx = dx / maxR;
 mobileInput.dy = dy / maxR;
 }
 
-function resetKnob() {
+function centerKnob() {
 knob.style.left = `${zone.clientWidth / 2 - knob.clientWidth / 2}px`;
 knob.style.top = `${zone.clientHeight / 2 - knob.clientHeight / 2}px`;
+}
+
+function resetKnob() {
+centerKnob();
 zone.style.display = "none";
 mobileInput.active = false;
 mobileInput.dx = 0;
@@ -487,18 +494,22 @@ mobileInput.pointerId = null;
 
 function placeZone(clientX, clientY) {
 const margin = 8;
-const left = Math.max(margin, Math.min(window.innerWidth - zone.clientWidth - margin, clientX - zone.clientWidth / 2));
-const top = Math.max(margin, Math.min(window.innerHeight - zone.clientHeight - margin, clientY - zone.clientHeight / 2));
+const computed = window.getComputedStyle(zone);
+const zoneW = parseFloat(computed.width) || zone.clientWidth;
+const zoneH = parseFloat(computed.height) || zone.clientHeight;
+const left = Math.max(margin, Math.min(window.innerWidth - zoneW - margin, clientX - zoneW / 2));
+const top = Math.max(margin, Math.min(window.innerHeight - zoneH - margin, clientY - zoneH / 2));
 zone.style.left = `${left}px`;
 zone.style.top = `${top}px`;
 zone.style.bottom = "auto";
 }
 
 window.addEventListener("pointerdown", e => {
-if (!coarsePointerQuery.matches || !e.isPrimary) return;
+if (!joystickEnabled() || !e.isPrimary) return;
 if (e.clientX > window.innerWidth * 0.6) return;
 placeZone(e.clientX, e.clientY);
 zone.style.display = "block";
+centerKnob();
 mobileInput.active = true;
 mobileInput.pointerId = e.pointerId;
 zone.setPointerCapture(e.pointerId);
@@ -521,7 +532,7 @@ resetKnob();
 });
 
 coarsePointerQuery.addEventListener("change", e => {
-if (!e.matches) resetKnob();
+if (!e.matches && !forceJoystickDebug) resetKnob();
 });
 }
 
