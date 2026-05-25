@@ -459,7 +459,6 @@ document.body.appendChild(zone);
 zone.style.display = "none";
 
 const maxR = 45;
-const knobHalf = 29;
 
 function updateKnob(clientX, clientY) {
 const rect = zone.getBoundingClientRect();
@@ -469,15 +468,21 @@ let dx = clientX - (rect.left + centerX);
 let dy = clientY - (rect.top + centerY);
 const len = Math.hypot(dx, dy);
 if (len > maxR) { dx = (dx / len) * maxR; dy = (dy / len) * maxR; }
-knob.style.left = `${centerX + dx - knobHalf}px`;
-knob.style.top = `${centerY + dy - knobHalf}px`;
+const knobHalfX = knob.clientWidth / 2;
+const knobHalfY = knob.clientHeight / 2;
+knob.style.left = `${centerX + dx - knobHalfX}px`;
+knob.style.top = `${centerY + dy - knobHalfY}px`;
 mobileInput.dx = dx / maxR;
 mobileInput.dy = dy / maxR;
 }
 
-function resetKnob() {
+function centerKnob() {
 knob.style.left = `${zone.clientWidth / 2 - knob.clientWidth / 2}px`;
 knob.style.top = `${zone.clientHeight / 2 - knob.clientHeight / 2}px`;
+}
+
+function resetKnob() {
+centerKnob();
 zone.style.display = "none";
 mobileInput.active = false;
 mobileInput.dx = 0;
@@ -499,6 +504,7 @@ if (!coarsePointerQuery.matches || !e.isPrimary) return;
 if (e.clientX > window.innerWidth * 0.6) return;
 placeZone(e.clientX, e.clientY);
 zone.style.display = "block";
+centerKnob();
 mobileInput.active = true;
 mobileInput.pointerId = e.pointerId;
 zone.setPointerCapture(e.pointerId);
