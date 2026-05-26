@@ -85,8 +85,10 @@ const chaserFootprints = [];
 const CHASER_FOOTPRINT_SIZE = PLAYER_RADIUS / 3;
 const CHASER_FOOTPRINT_MAX = 28;
 const CHASER_FOOTPRINT_INTERVAL = 18;
+const BLOOD_STAIN_DENSITY = 0.06;
 let chaserFootprintStep = 0;
 let chaserFootprintSide = 1;
+let bloodStains = [];
 const spawn = { x: 0, y: 0 };
 const exit = { x: 0, y: 0 };
 const keyItem = { x: 0, y: 0, collected: false };
@@ -99,6 +101,7 @@ const playerGraphic = new PIXI.Graphics();
 const exitGraphic = new PIXI.Graphics();
 const keyGraphic = new PIXI.Graphics();
 const chaserGraphic = new PIXI.Graphics();
+const bloodGraphic = new PIXI.Graphics();
 
 const darkness = new PIXI.Graphics();
 darkness.blendMode = PIXI.BLEND_MODES.NORMAL;
@@ -150,6 +153,7 @@ keyItem.x = keyTile.x * TILE + TILE / 2;
 keyItem.y = keyTile.y * TILE + TILE / 2;
 keyItem.collected = false;
 document.getElementById("key-status").innerText = "Not found";
+generateBloodStains();
 }
 
 function findFarthestOpenTile(startX, startY) {
@@ -184,6 +188,49 @@ if (!banned.has(key)) openTiles.push({ x, y });
 }
 if (openTiles.length === 0) return { x: 1, y: 1 };
 return openTiles[Math.floor(Math.random() * openTiles.length)];
+}
+
+
+function generateBloodStains() {
+bloodStains = [];
+for (let y = 1; y < mazeH - 1; y++) {
+for (let x = 1; x < mazeW - 1; x++) {
+if (maze[y][x] !== 0) continue;
+const wallNeighbors = [
+maze[y - 1][x] === 1,
+maze[y + 1][x] === 1,
+maze[y][x - 1] === 1,
+maze[y][x + 1] === 1
+].filter(Boolean).length;
+const chance = BLOOD_STAIN_DENSITY + wallNeighbors * 0.03;
+if (Math.random() > chance) continue;
+const px = x * TILE + Math.floor(Math.random() * (TILE - 8)) + 4;
+const py = y * TILE + Math.floor(Math.random() * (TILE - 8)) + 4;
+bloodStains.push({ x: px, y: py, size: 2 + Math.floor(Math.random() * 3), alpha: 0.2 + Math.random() * 0.25 });
+if (Math.random() < 0.45) {
+bloodStains.push({
+x: px + (Math.random() < 0.5 ? -1 : 1) * (3 + Math.floor(Math.random() * 4)),
+y: py + (Math.random() < 0.5 ? -1 : 1) * (2 + Math.floor(Math.random() * 4)),
+size: 1 + Math.floor(Math.random() * 2),
+alpha: 0.12 + Math.random() * 0.2
+});
+}
+}
+}
+}
+
+function drawBloodStains() {
+bloodGraphic.clear();
+for (const stain of bloodStains) {
+bloodGraphic.beginFill(0x4a0508, stain.alpha);
+bloodGraphic.drawRect(
+Math.round(stain.x - stain.size / 2),
+Math.round(stain.y - stain.size / 2),
+stain.size,
+stain.size
+);
+bloodGraphic.endFill();
+}
 }
 
 function generateMaze(w, h) {
@@ -229,6 +276,7 @@ keyItem.x = keyTile.x * TILE + TILE / 2;
 keyItem.y = keyTile.y * TILE + TILE / 2;
 keyItem.collected = false;
 document.getElementById("key-status").innerText = "Not found";
+generateBloodStains();
 }
 
 function buildWorld() {
@@ -253,6 +301,7 @@ g.y = y * TILE;
 world.addChild(g);
 }
 }
+world.addChild(bloodGraphic);
 world.addChild(exitGraphic);
 world.addChild(keyGraphic);
 world.addChild(chaserGraphic);
@@ -313,7 +362,7 @@ for (const footprint of chaserFootprints) {
 const ageT = footprint.life / CHASER_FOOTPRINT_MAX;
 const alpha = 0.05 + ageT * 0.25;
 const size = CHASER_FOOTPRINT_SIZE;
-chaserGraphic.beginFill(0xd9f7ff, alpha);
+chaserGraphic.beginFill(0x5b0b12, alpha);
 chaserGraphic.drawRect(
 Math.round(footprint.x - size / 2),
 Math.round(footprint.y - size / 2),
@@ -465,6 +514,7 @@ movePlayer();
 moveChaser();
 cameraFollow();
 drawPlayer();
+drawBloodStains();
 drawExit();
 drawKeyItem();
 drawChaser();
