@@ -82,7 +82,7 @@ window.addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
 const player = { x: 0, y: 0, speed: 1.4 };
 const chaser = { x: 0, y: 0, radius: 10, speedFactor: 0.375 };
 const chaserFootprints = [];
-const CHASER_FOOTPRINT_SIZE = (PLAYER_RADIUS / 3) * 8;
+const CHASER_FOOTPRINT_SIZE = PLAYER_RADIUS / 3;
 const CHASER_FOOTPRINT_MAX = 56;
 const CHASER_FOOTPRINT_INTERVAL = 12;
 const BLOOD_STAIN_DENSITY = 0.16;
@@ -222,7 +222,7 @@ alpha: 0.25 + Math.random() * 0.3
 function drawBloodStains() {
 bloodGraphic.clear();
 for (const stain of bloodStains) {
-bloodGraphic.beginFill(0x240002, Math.min(1, stain.alpha * 1.2));
+bloodGraphic.beginFill(0x120001, Math.min(1, stain.alpha * 1.8));
 bloodGraphic.drawRect(
 Math.round(stain.x - stain.size / 2),
 Math.round(stain.y - stain.size / 2),
