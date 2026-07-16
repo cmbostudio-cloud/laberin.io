@@ -1,636 +1,1161 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>laberin.io</title>
-<style>
-html, body { margin: 0; overflow: hidden; background: #101010; font-family: monospace; }
-canvas { display: block; image-rendering: pixelated; }
-#hud {
-position: fixed; top: 10px; left: 10px; z-index: 100; color: white;
-background: rgba(0, 0, 0, 0.45); border: 1px solid #444; padding: 8px; min-width: 160px; font-size: 8px;
-}
-#settings-btn {
-position: fixed; top: 10px; right: 10px; z-index: 130; width: 42px; height: 42px;
-border-radius: 50%; border: 1px solid #555; background: rgba(0, 0, 0, 0.65);
-color: #fff; font-size: 10px; cursor: pointer; line-height: 1; padding: 0;
-}
-#settings-menu {
-position: fixed; top: 62px; right: 10px; z-index: 125; color: white;
-background: rgba(0, 0, 0, 0.65); border: 1px solid #444; padding: 8px; min-width: 176px; display: none; font-size: 8px;
-}
-#title { color: #7df9ff; font-weight: bold; margin-bottom: 6px; }
-button { width: 100%; margin-top: 6px; background: #222; color: white; border: 1px solid #555; padding: 6px; cursor: pointer; font-family: monospace; font-size: 8px; }
-button:hover { background: #333; }
-#joystick-zone {
-position: fixed; left: 20px; bottom: 20px; width: 140px; height: 140px; border-radius: 50%;
-background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.25); z-index: 120;
-touch-action: none; display: none;
-}
-#joystick-knob {
-position: absolute; width: 58px; height: 58px; left: 41px; top: 41px; border-radius: 50%;
-background: rgba(125, 249, 255, 0.65); border: 1px solid rgba(255, 255, 255, 0.5); pointer-events: none;
-}
-@media (pointer: fine) { #joystick-zone { display: none !important; } }
-
-@media (pointer: coarse) {
-#hud { top: 6px; left: 6px; padding: 6px; min-width: 130px; font-size: 7px; }
-#settings-btn { top: 6px; right: 6px; width: 36px; height: 36px; font-size: 14px; }
-#settings-menu { top: 46px; right: 6px; min-width: 150px; font-size: 7px; }
-button { font-size: 7px; }
-#joystick-zone { width: 120px; height: 120px; left: 14px; bottom: 14px; }
-#joystick-knob { width: 50px; height: 50px; left: 35px; top: 35px; }
-}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>타이쿤 마스터: 10x10 경영 시뮬레이션</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- PixiJS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
+  <!-- FontAwesome for Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    body {
+      background-color: #0f172a;
+      color: #f8fafc;
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+      overflow-x: hidden;
+    }
+    /* 커스텀 스크롤바 */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #1e293b;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #475569;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #64748b;
+    }
+    canvas {
+      border-radius: 12px;
+      box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.5), 0 8px 10px -6px rgb(0 0 0 / 0.5);
+    }
+  </style>
 </head>
-<body>
-<button id="settings-btn" aria-label="Settings">⚙</button>
-
-<div id="hud">
-<div id="title">laberin.io</div>
-<div>Stage: <span id="stage">1</span></div>
-<div style="margin-top:6px;">WASD / Arrow Keys</div>
-<div style="margin-top:4px;">Key: <span id="key-status">Not found</span></div>
-</div>
-
-<div id="settings-menu">
-<button onclick="restartMap()">Restart Current Map</button>
-<button onclick="resetGame()">Reset Entire Save</button>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/pixi.js@7.x/dist/pixi.min.js"></script>
-<script>
-const app = new PIXI.Application({ resizeTo: window, background: "#101010", antialias: false });
-document.body.appendChild(app.view);
-
-const TILE = 40;
-const PLAYER_RADIUS = 8;
-const CAMERA_ZOOM = 1.25;
-
-let stageLevel = 1;
-let mazeW = 15;
-let mazeH = 15;
-let maze = [];
-
-const keys = {};
-const mobileInput = { active: false, dx: 0, dy: 0, pointerId: null };
-
-window.addEventListener("keydown", e => { keys[e.key.toLowerCase()] = true; });
-window.addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
-
-const player = { x: 0, y: 0, speed: 1.4 };
-const chaser = { x: 0, y: 0, radius: 10, speedFactor: 0.375 };
-const chaserFootprints = [];
-const CHASER_FOOTPRINT_SIZE = PLAYER_RADIUS / 3;
-const CHASER_FOOTPRINT_MAX = 56;
-const CHASER_FOOTPRINT_INTERVAL = 12;
-const BLOOD_STAIN_DENSITY = 0.16;
-let chaserFootprintStep = 0;
-let chaserFootprintSide = 1;
-let bloodStains = [];
-const spawn = { x: 0, y: 0 };
-const exit = { x: 0, y: 0 };
-const keyItem = { x: 0, y: 0, collected: false };
-
-const world = new PIXI.Container();
-world.scale.set(CAMERA_ZOOM);
-app.stage.addChild(world);
-
-const playerGraphic = new PIXI.Graphics();
-const exitGraphic = new PIXI.Graphics();
-const keyGraphic = new PIXI.Graphics();
-const chaserGraphic = new PIXI.Graphics();
-const bloodGraphic = new PIXI.Graphics();
-
-const darkness = new PIXI.Graphics();
-darkness.blendMode = PIXI.BLEND_MODES.NORMAL;
-app.stage.addChild(darkness);
-
-const warningHud = document.createElement("div");
-warningHud.id = "warning-hud";
-warningHud.style.cssText = "position:fixed;top:20px;left:50%;z-index:140;color:#ffffff;font-family:monospace;text-align:center;letter-spacing:1px;pointer-events:none;";
-warningHud.innerHTML = `<div id="warning-title" style="font-size: 10px;line-height:1.1;">SOMETHING IS APPROACHING</div><div id="distance-text" style="font-size: 8px;margin-top:8px;">DISTANCE: [000]m</div>`;
-document.body.appendChild(warningHud);
-const warningTitle = document.getElementById("warning-title");
-const distanceText = document.getElementById("distance-text");
-
-function saveGame() {
-localStorage.setItem("laberin-save", JSON.stringify({ stageLevel, mazeW, mazeH }));
-}
-
-function loadGame() {
-const data = localStorage.getItem("laberin-save");
-if (!data) return;
-try {
-const save = JSON.parse(data);
-stageLevel = save.stageLevel || 1;
-mazeW = save.mazeW || 15;
-mazeH = save.mazeH || 15;
-} catch (e) {}
-}
-
-function resetGame() {
-localStorage.removeItem("laberin-save");
-stageLevel = 1;
-mazeW = 15;
-mazeH = 15;
-generateMaze(mazeW, mazeH);
-buildWorld();
-}
-
-function restartMap() {
-player.x = spawn.x;
-player.y = spawn.y;
-chaser.x = exit.x;
-chaser.y = exit.y;
-chaserFootprints.length = 0;
-chaserFootprintStep = 0;
-chaserFootprintSide = 1;
-const farthest = findFarthestOpenTile(1, 1);
-const keyTile = findRandomOpenTile([{ x: 1, y: 1 }, { x: farthest.x, y: farthest.y }]);
-keyItem.x = keyTile.x * TILE + TILE / 2;
-keyItem.y = keyTile.y * TILE + TILE / 2;
-keyItem.collected = false;
-document.getElementById("key-status").innerText = "Not found";
-generateBloodStains();
-}
-
-function findFarthestOpenTile(startX, startY) {
-const visited = Array.from({ length: mazeH }, () => Array(mazeW).fill(false));
-const queue = [{ x: startX, y: startY, d: 0 }];
-visited[startY][startX] = true;
-let farthest = queue[0];
-let qi = 0;
-
-while (qi < queue.length) {
-const cur = queue[qi++];
-if (cur.d > farthest.d) farthest = cur;
-const nexts = [[cur.x + 1, cur.y], [cur.x - 1, cur.y], [cur.x, cur.y + 1], [cur.x, cur.y - 1]];
-for (const [nx, ny] of nexts) {
-if (nx < 0 || ny < 0 || nx >= mazeW || ny >= mazeH || visited[ny][nx] || maze[ny][nx] !== 0) continue;
-visited[ny][nx] = true;
-queue.push({ x: nx, y: ny, d: cur.d + 1 });
-}
-}
-return farthest;
-}
-
-function findRandomOpenTile(exclude = []) {
-const banned = new Set(exclude.map(p => `${p.x},${p.y}`));
-const openTiles = [];
-for (let y = 0; y < mazeH; y++) {
-for (let x = 0; x < mazeW; x++) {
-if (maze[y][x] !== 0) continue;
-const key = `${x},${y}`;
-if (!banned.has(key)) openTiles.push({ x, y });
-}
-}
-if (openTiles.length === 0) return { x: 1, y: 1 };
-return openTiles[Math.floor(Math.random() * openTiles.length)];
-}
-
-
-function generateBloodStains() {
-bloodStains = [];
-for (let y = 1; y < mazeH - 1; y++) {
-for (let x = 1; x < mazeW - 1; x++) {
-if (maze[y][x] !== 0) continue;
-const wallNeighbors = [
-maze[y - 1][x] === 1,
-maze[y + 1][x] === 1,
-maze[y][x - 1] === 1,
-maze[y][x + 1] === 1
-].filter(Boolean).length;
-const chance = BLOOD_STAIN_DENSITY + wallNeighbors * 0.03;
-if (Math.random() > chance) continue;
-const px = x * TILE + Math.floor(Math.random() * (TILE - 8)) + 4;
-const py = y * TILE + Math.floor(Math.random() * (TILE - 8)) + 4;
-bloodStains.push({ x: px, y: py, size: 3 + Math.floor(Math.random() * 4), alpha: 0.35 + Math.random() * 0.35 });
-if (Math.random() < 0.45) {
-bloodStains.push({
-x: px + (Math.random() < 0.5 ? -1 : 1) * (3 + Math.floor(Math.random() * 4)),
-y: py + (Math.random() < 0.5 ? -1 : 1) * (2 + Math.floor(Math.random() * 4)),
-size: 1 + Math.floor(Math.random() * 2),
-alpha: 0.25 + Math.random() * 0.3
-});
-}
-}
-}
-}
-
-function drawBloodStains() {
-bloodGraphic.clear();
-for (const stain of bloodStains) {
-bloodGraphic.beginFill(0x120001, Math.min(1, stain.alpha * 1.8));
-bloodGraphic.drawRect(
-Math.round(stain.x - stain.size / 2),
-Math.round(stain.y - stain.size / 2),
-stain.size,
-stain.size
-);
-bloodGraphic.endFill();
-}
-}
-
-function generateMaze(w, h) {
-maze = [];
-for (let y = 0; y < h; y++) {
-maze[y] = [];
-for (let x = 0; x < w; x++) maze[y][x] = 1;
-}
-
-function carve(cx, cy) {
-const dirs = [[0, -2], [2, 0], [0, 2], [-2, 0]];
-dirs.sort(() => Math.random() - 0.5);
-for (const [dx, dy] of dirs) {
-const nx = cx + dx;
-const ny = cy + dy;
-if (nx > 0 && ny > 0 && nx < w - 1 && ny < h - 1 && maze[ny][nx] === 1) {
-maze[ny][nx] = 0;
-maze[cy + dy / 2][cx + dx / 2] = 0;
-carve(nx, ny);
-}
-}
-}
-
-maze[1][1] = 0;
-carve(1, 1);
-
-spawn.x = TILE * 1.5;
-spawn.y = TILE * 1.5;
-player.x = spawn.x;
-player.y = spawn.y;
-
-const farthest = findFarthestOpenTile(1, 1);
-exit.x = farthest.x * TILE + TILE / 2;
-exit.y = farthest.y * TILE + TILE / 2;
-chaser.x = exit.x;
-chaser.y = exit.y;
-chaserFootprints.length = 0;
-chaserFootprintStep = 0;
-chaserFootprintSide = 1;
-
-const keyTile = findRandomOpenTile([{ x: 1, y: 1 }, { x: farthest.x, y: farthest.y }]);
-keyItem.x = keyTile.x * TILE + TILE / 2;
-keyItem.y = keyTile.y * TILE + TILE / 2;
-keyItem.collected = false;
-document.getElementById("key-status").innerText = "Not found";
-generateBloodStains();
-}
-
-function buildWorld() {
-world.removeChildren();
-for (let y = 0; y < mazeH; y++) {
-for (let x = 0; x < mazeW; x++) {
-const g = new PIXI.Graphics();
-if (maze[y][x] === 1) {
-g.beginFill(0x2d2d2d);
-g.drawRect(0, 0, TILE, TILE);
-g.beginFill(0x404040);
-for (let py = 0; py < TILE; py += 8) for (let px = 0; px < TILE; px += 8) g.drawRect(px, py, 3, 3);
-} else {
-g.beginFill(0x1a1a1a);
-g.drawRect(0, 0, TILE, TILE);
-g.beginFill(0x242424);
-for (let py = 0; py < TILE; py += 8) for (let px = 0; px < TILE; px += 8) g.drawRect(px, py, 1, 1);
-}
-g.endFill();
-g.x = x * TILE;
-g.y = y * TILE;
-world.addChild(g);
-}
-}
-world.addChild(bloodGraphic);
-world.addChild(exitGraphic);
-world.addChild(keyGraphic);
-world.addChild(chaserGraphic);
-world.addChild(playerGraphic);
-}
-
-function drawPlayer() {
-playerGraphic.clear();
-playerGraphic.beginFill(0xffffff);
-playerGraphic.drawCircle(0, 0, PLAYER_RADIUS);
-playerGraphic.beginFill(0x7df9ff);
-playerGraphic.drawRect(-3, -3, 3, 3);
-playerGraphic.endFill();
-playerGraphic.x = player.x;
-playerGraphic.y = player.y;
-}
-
-function drawExit() {
-exitGraphic.clear();
-exitGraphic.beginFill(keyItem.collected ? 0x66ff88 : 0x446655);
-exitGraphic.drawRect(-8, -8, 16, 16);
-exitGraphic.endFill();
-exitGraphic.x = exit.x;
-exitGraphic.y = exit.y;
-}
-
-
-function drawKeyItem() {
-keyGraphic.clear();
-if (keyItem.collected) {
-keyGraphic.visible = false;
-return;
-}
-keyGraphic.visible = true;
-keyGraphic.beginFill(0xffdd55);
-keyGraphic.drawCircle(0, 0, 6);
-keyGraphic.beginFill(0x101010);
-keyGraphic.drawCircle(0, 0, 2.5);
-keyGraphic.beginFill(0xffdd55);
-keyGraphic.drawRect(4, -2, 10, 4);
-keyGraphic.drawRect(11, -2, 2, 6);
-keyGraphic.drawRect(8, -2, 2, 5);
-keyGraphic.endFill();
-keyGraphic.x = keyItem.x;
-keyGraphic.y = keyItem.y;
-}
-
-function isWall(px, py) {
-const tx = Math.floor(px / TILE);
-const ty = Math.floor(py / TILE);
-if (tx < 0 || ty < 0 || tx >= mazeW || ty >= mazeH) return true;
-return maze[ty][tx] === 1;
-}
-
-function drawChaser() {
-chaserGraphic.clear();
-for (const footprint of chaserFootprints) {
-const ageT = footprint.life / CHASER_FOOTPRINT_MAX;
-const alpha = 0.22 + ageT * 0.5;
-const size = CHASER_FOOTPRINT_SIZE;
-chaserGraphic.beginFill(0x2a0003, alpha);
-chaserGraphic.drawRect(
-Math.round(footprint.x - size / 2),
-Math.round(footprint.y - size / 2),
-Math.max(1, Math.round(size)),
-Math.max(1, Math.round(size))
-);
-chaserGraphic.endFill();
-}
-}
-
-function moveChaser() {
-const dx = player.x - chaser.x;
-const dy = player.y - chaser.y;
-const len = Math.hypot(dx, dy);
-if (len === 0) return;
-const speed = player.speed * chaser.speedFactor;
-chaser.x += (dx / len) * speed;
-chaser.y += (dy / len) * speed;
-
-chaserFootprintStep += speed;
-if (chaserFootprintStep >= CHASER_FOOTPRINT_INTERVAL) {
-chaserFootprintStep = 0;
-const nx = -dy / len;
-const ny = dx / len;
-const offset = CHASER_FOOTPRINT_SIZE * 1.3 * chaserFootprintSide;
-chaserFootprints.push({
-x: chaser.x + nx * offset,
-y: chaser.y + ny * offset,
-life: CHASER_FOOTPRINT_MAX
-});
-chaserFootprintSide *= -1;
-if (chaserFootprints.length > CHASER_FOOTPRINT_MAX) chaserFootprints.shift();
-}
-
-for (let i = chaserFootprints.length - 1; i >= 0; i--) {
-chaserFootprints[i].life -= 1;
-if (chaserFootprints[i].life <= 0) chaserFootprints.splice(i, 1);
-}
-}
-
-function drawDarkness() {
-const spotlightRadius = 160;
-const px = player.x * CAMERA_ZOOM + world.x;
-const py = player.y * CAMERA_ZOOM + world.y;
-darkness.clear();
-darkness.beginFill(0x000000, 0.88);
-darkness.drawRect(0, 0, app.screen.width, app.screen.height);
-darkness.endFill();
-
-darkness.beginHole();
-darkness.drawCircle(px, py, spotlightRadius);
-darkness.endHole();
-
-darkness.lineStyle(0);
-for (let r = spotlightRadius + 6; r < spotlightRadius + 52; r += 8) {
-const alpha = Math.max(0, 0.12 - (r - spotlightRadius) * 0.0022);
-darkness.beginFill(0xffffff, alpha);
-darkness.drawCircle(px, py, r);
-darkness.endFill();
-}
-}
-
-function updateWarning() {
-const distPx = Math.hypot(player.x - chaser.x, player.y - chaser.y);
-const distMeters = Math.max(0, Math.floor(distPx / TILE * 10));
-const dangerT = Math.max(0, Math.min(1, (150 - distMeters) / 100));
-const color = `rgb(255, ${Math.floor(255 - 120 * dangerT)}, ${Math.floor(255 - 120 * dangerT)})`;
-const titleSize = (20 + dangerT * 34) * 0.5;
-const distSize = (16 + dangerT * 24) * 0.5;
-const glow = 4 + 14 * dangerT;
-warningTitle.style.color = color;
-distanceText.style.color = color;
-warningTitle.style.fontSize = `${titleSize}px`;
-distanceText.style.fontSize = `${distSize}px`;
-warningTitle.style.textShadow = `0 0 ${glow}px rgba(255,80,80, ${0.3 + 0.5 * dangerT})`;
-distanceText.style.textShadow = `0 0 ${glow}px rgba(255,80,80, ${0.3 + 0.5 * dangerT})`;
-
-if (distMeters <= 50) {
-const shakePower = (50 - distMeters) / 50;
-const sx = (Math.random() - 0.5) * 10 * shakePower;
-const sy = (Math.random() - 0.5) * 8 * shakePower;
-warningHud.style.transform = `translateX(-50%) translate(${sx}px, ${sy}px)`;
-} else {
-warningHud.style.transform = "translateX(-50%)";
-}
-distanceText.textContent = `DISTANCE: [${String(distMeters).padStart(3, "0")}]m`;
-}
-
-function movePlayer() {
-let dx = 0, dy = 0;
-if (keys["w"] || keys["arrowup"]) dy -= 1;
-if (keys["s"] || keys["arrowdown"]) dy += 1;
-if (keys["a"] || keys["arrowleft"]) dx -= 1;
-if (keys["d"] || keys["arrowright"]) dx += 1;
-dx += mobileInput.dx;
-dy += mobileInput.dy;
-
-const lenRaw = Math.hypot(dx, dy);
-const len = Math.min(1, lenRaw);
-if (len > 0) { dx /= lenRaw; dy /= lenRaw; }
-
-const speed = player.speed;
-const nx = player.x + dx * speed * len;
-const ny = player.y + dy * speed * len;
-const pad = 7;
-
-if (!isWall(nx - pad, player.y - pad) && !isWall(nx + pad, player.y - pad) && !isWall(nx - pad, player.y + pad) && !isWall(nx + pad, player.y + pad)) player.x = nx;
-if (!isWall(player.x - pad, ny - pad) && !isWall(player.x + pad, ny - pad) && !isWall(player.x - pad, ny + pad) && !isWall(player.x + pad, ny + pad)) player.y = ny;
-}
-
-function cameraFollow() {
-const tx = app.screen.width / 2 - player.x * CAMERA_ZOOM;
-const ty = app.screen.height / 2 - player.y * CAMERA_ZOOM;
-world.x += (tx - world.x) * 0.08;
-world.y += (ty - world.y) * 0.08;
-}
-
-function checkKeyPickup() {
-if (keyItem.collected) return;
-const dist = Math.hypot(player.x - keyItem.x, player.y - keyItem.y);
-if (dist < 18) {
-keyItem.collected = true;
-document.getElementById("key-status").innerText = "Acquired";
-}
-}
-
-function checkExit() {
-if (!keyItem.collected) return;
-const dist = Math.hypot(player.x - exit.x, player.y - exit.y);
-if (dist < 18) {
-stageLevel ++;
-document.getElementById("stage").innerText = stageLevel;
-mazeW += 4; mazeH += 4;
-if (mazeW % 2 === 0) mazeW ++;
-if (mazeH % 2 === 0) mazeH ++;
-saveGame();
-generateMaze(mazeW, mazeH);
-buildWorld();
-}
-}
-
-function checkCaught() {
-const dist = Math.hypot(player.x - chaser.x, player.y - chaser.y);
-if (dist <= PLAYER_RADIUS + chaser.radius) restartMap();
-}
-
-function update() {
-movePlayer();
-moveChaser();
-cameraFollow();
-drawPlayer();
-drawBloodStains();
-drawExit();
-drawKeyItem();
-drawChaser();
-drawDarkness();
-updateWarning();
-checkCaught();
-checkKeyPickup();
-checkExit();
-}
-
-function setupSettingsMenu() {
-const settingsBtn = document.getElementById("settings-btn");
-const menu = document.getElementById("settings-menu");
-settingsBtn.addEventListener("click", () => {
-menu.style.display = menu.style.display === "block" ? "none" : "block";
-});
-window.addEventListener("keydown", e => { if (e.key === "Escape") menu.style.display = "none"; });
-}
-
-function setupJoystick() {
-const coarsePointerQuery = window.matchMedia("(pointer: coarse)");
-const forceJoystickDebug = new URLSearchParams(window.location.search).has("joystickDebug");
-const joystickEnabled = () => coarsePointerQuery.matches || forceJoystickDebug;
-if (!joystickEnabled()) return;
-
-const zone = document.createElement("div");
-zone.id = "joystick-zone";
-const knob = document.createElement("div");
-knob.id = "joystick-knob";
-zone.appendChild(knob);
-document.body.appendChild(zone);
-zone.style.display = "none";
-
-const maxR = 45;
-
-function updateKnob(clientX, clientY) {
-const rect = zone.getBoundingClientRect();
-const centerX = rect.width / 2;
-const centerY = rect.height / 2;
-let dx = clientX - (rect.left + centerX);
-let dy = clientY - (rect.top + centerY);
-const len = Math.hypot(dx, dy);
-if (len > maxR) { dx = (dx / len) * maxR; dy = (dy / len) * maxR; }
-const knobHalfX = knob.clientWidth / 2;
-const knobHalfY = knob.clientHeight / 2;
-knob.style.left = `${centerX + dx - knobHalfX}px`;
-knob.style.top = `${centerY + dy - knobHalfY}px`;
-mobileInput.dx = dx / maxR;
-mobileInput.dy = dy / maxR;
-}
-
-function centerKnob() {
-knob.style.left = `${zone.clientWidth / 2 - knob.clientWidth / 2}px`;
-knob.style.top = `${zone.clientHeight / 2 - knob.clientHeight / 2}px`;
-}
-
-function resetKnob() {
-centerKnob();
-zone.style.display = "none";
-mobileInput.active = false;
-mobileInput.dx = 0;
-mobileInput.dy = 0;
-mobileInput.pointerId = null;
-}
-
-function placeZone(clientX, clientY) {
-const margin = 8;
-const computed = window.getComputedStyle(zone);
-const zoneW = parseFloat(computed.width) || zone.clientWidth;
-const zoneH = parseFloat(computed.height) || zone.clientHeight;
-const left = Math.max(margin, Math.min(window.innerWidth - zoneW - margin, clientX - zoneW / 2));
-const top = Math.max(margin, Math.min(window.innerHeight - zoneH - margin, clientY - zoneH / 2));
-zone.style.left = `${left}px`;
-zone.style.top = `${top}px`;
-zone.style.bottom = "auto";
-}
-
-window.addEventListener("pointerdown", e => {
-if (!joystickEnabled() || !e.isPrimary) return;
-if (e.clientX > window.innerWidth * 0.6) return;
-placeZone(e.clientX, e.clientY);
-zone.style.display = "block";
-centerKnob();
-mobileInput.active = true;
-mobileInput.pointerId = e.pointerId;
-zone.setPointerCapture(e.pointerId);
-updateKnob(e.clientX, e.clientY);
-});
-
-window.addEventListener("pointermove", e => {
-if (!mobileInput.active || e.pointerId !== mobileInput.pointerId) return;
-updateKnob(e.clientX, e.clientY);
-});
-
-window.addEventListener("pointerup", e => {
-if (e.pointerId !== mobileInput.pointerId) return;
-resetKnob();
-});
-
-window.addEventListener("pointercancel", e => {
-if (e.pointerId !== mobileInput.pointerId) return;
-resetKnob();
-});
-
-coarsePointerQuery.addEventListener("change", e => {
-if (!e.matches && !forceJoystickDebug) resetKnob();
-});
-}
-
-loadGame();
-document.getElementById("stage").innerText = stageLevel;
-generateMaze(mazeW, mazeH);
-buildWorld();
-setupSettingsMenu();
-setupJoystick();
-app.ticker.add(update);
-</script>
+<body class="min-h-screen flex flex-col">
+
+  <!-- 헤더 영역 -->
+  <header class="bg-slate-900 border-b border-slate-800 py-4 px-6 flex flex-wrap justify-between items-center gap-4">
+    <div class="flex items-center gap-3">
+      <div class="bg-amber-500 text-slate-950 p-2.5 rounded-xl font-black text-xl shadow-lg shadow-amber-500/20 animate-bounce">
+        <i class="fa-solid fa-city"></i>
+      </div>
+      <div>
+        <h1 class="text-xl font-bold tracking-tight bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">타이쿤 마스터</h1>
+        <p class="text-xs text-slate-400">10x10 그리드에 최강의 도시를 설계하세요!</p>
+      </div>
+    </div>
+    
+    <!-- 실시간 자원 현황 -->
+    <div class="flex gap-4 sm:gap-6">
+      <div class="bg-slate-950/80 border border-slate-800 px-4 py-2 rounded-xl flex items-center gap-3">
+        <div class="text-amber-400 text-2xl animate-pulse"><i class="fa-solid fa-coins"></i></div>
+        <div>
+          <p class="text-[10px] uppercase tracking-wider text-slate-500 font-bold">보유 코인</p>
+          <p id="coin-display" class="text-lg font-black text-amber-300">0</p>
+        </div>
+      </div>
+      <div class="bg-slate-950/80 border border-slate-800 px-4 py-2 rounded-xl flex items-center gap-3">
+        <div class="text-emerald-400 text-2xl"><i class="fa-solid fa-chart-line"></i></div>
+        <div>
+          <p class="text-[10px] uppercase tracking-wider text-slate-500 font-bold">초당 생산량 (CPS)</p>
+          <p id="cps-display" class="text-lg font-black text-emerald-400">+0.0</p>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- 메인 게임 영역 -->
+  <main class="flex-1 grid grid-cols-1 xl:grid-cols-12 gap-6 p-4 md:p-6 max-w-7xl w-full mx-auto">
+    
+    <!-- 왼쪽: 게임 뷰포트 (PixiJS) -->
+    <div class="xl:col-span-7 flex flex-col gap-4">
+      <div class="bg-slate-900/40 p-4 rounded-2xl border border-slate-800 flex flex-col items-center justify-center relative">
+        <!-- 툴바 정보 -->
+        <div class="w-full flex justify-between items-center mb-3 px-1 text-sm text-slate-400">
+          <span class="flex items-center gap-1.5 font-medium">
+            <i class="fa-solid fa-border-all text-slate-500"></i>
+            10 x 10 개발 구역
+          </span>
+          <span id="hover-tile-info" class="text-xs bg-slate-800 px-2.5 py-1 rounded-md text-slate-300 min-h-[24px] flex items-center">
+            타일을 선택해 건설을 시작하세요.
+          </span>
+        </div>
+
+        <!-- PixiJS 캔버스 컨테이너 -->
+        <div id="canvas-container" class="relative w-full aspect-square max-w-[550px] bg-slate-950 rounded-xl overflow-hidden border border-slate-800">
+          <!-- 로딩 스피너 -->
+          <div id="game-loader" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 z-10 transition-opacity duration-500">
+            <div class="animate-spin rounded-full h-12 w-12 border-4 border-amber-500 border-t-transparent mb-4"></div>
+            <p class="text-slate-400 text-sm">도시 엔진 초기화 중...</p>
+          </div>
+        </div>
+
+        <!-- 하단 조작 보조 -->
+        <div class="w-full flex justify-between gap-4 mt-3 px-1 text-xs text-slate-500">
+          <p><i class="fa-solid fa-circle-info mr-1"></i>건물을 지으면 주변 건물들과 상호작용하여 시너지가 발생합니다!</p>
+          <button id="btn-clear-all" class="text-red-400 hover:text-red-300 transition flex items-center gap-1">
+            <i class="fa-solid fa-rotate-left"></i>구역 초기화
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 오른쪽: 컨트롤 패널 (건설, 상점, 업그레이드) -->
+    <div class="xl:col-span-5 flex flex-col gap-6">
+      
+      <!-- 탭 내비게이션 -->
+      <div class="flex bg-slate-950 p-1 rounded-xl border border-slate-800">
+        <button id="tab-build" class="flex-1 py-2.5 px-3 rounded-lg text-sm font-bold transition flex items-center justify-center gap-2 bg-slate-800 text-white">
+          <i class="fa-solid fa-hammer"></i>건물 건설
+        </button>
+        <button id="tab-upgrade" class="flex-1 py-2.5 px-3 rounded-lg text-sm font-bold transition text-slate-400 hover:text-white flex items-center justify-center gap-2">
+          <i class="fa-solid fa-arrow-up-right-dots"></i>특수 연구
+        </button>
+        <button id="tab-status" class="flex-1 py-2.5 px-3 rounded-lg text-sm font-bold transition text-slate-400 hover:text-white flex items-center justify-center gap-2">
+          <i class="fa-solid fa-chart-pie"></i>도시 정보
+        </button>
+      </div>
+
+      <!-- [패널 1] 건물 건설 목록 -->
+      <div id="panel-build" class="flex-1 flex flex-col gap-4">
+        <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+          <h3 class="text-sm font-bold text-slate-400 mb-3 uppercase tracking-wider">건설할 도구/건물 선택</h3>
+          
+          <div class="grid grid-cols-1 gap-3">
+            <!-- 철거 모드 -->
+            <button id="tool-demolish" class="tool-btn flex items-center justify-between p-3 rounded-xl border-2 border-slate-700/60 bg-slate-900 hover:bg-slate-800 transition text-left group">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-red-950/60 text-red-400 flex items-center justify-center text-lg border border-red-800/30">
+                  <i class="fa-solid fa-person-digging"></i>
+                </div>
+                <div>
+                  <h4 class="font-bold text-slate-200">불도저 (건물 철거)</h4>
+                  <p class="text-xs text-slate-400">배치된 건물을 부수고 부지를 확보합니다.</p>
+                </div>
+              </div>
+              <span class="text-xs bg-slate-800 px-2 py-1 rounded text-red-400 font-bold">무료</span>
+            </button>
+
+            <!-- 주거지 (House) -->
+            <button id="build-house" class="tool-btn flex items-center justify-between p-3 rounded-xl border-2 border-slate-800 bg-slate-900 hover:bg-slate-850 transition text-left group">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-sky-950/80 text-sky-400 flex items-center justify-center text-lg border border-sky-800/30">
+                  <i class="fa-solid fa-house"></i>
+                </div>
+                <div>
+                  <h4 class="font-bold text-slate-200">단독 주택</h4>
+                  <p class="text-xs text-slate-400">기본적인 세금을 납부합니다. <span class="text-amber-400 font-semibold">+2 코인/초</span></p>
+                </div>
+              </div>
+              <div class="text-right">
+                <span class="text-xs block text-slate-400">비용</span>
+                <span class="text-sm font-black text-amber-400" id="cost-house">50</span>
+              </div>
+            </button>
+
+            <!-- 상가 (Shop) -->
+            <button id="build-shop" class="tool-btn flex items-center justify-between p-3 rounded-xl border-2 border-slate-800 bg-slate-900 hover:bg-slate-850 transition text-left group">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-emerald-950/80 text-emerald-400 flex items-center justify-center text-lg border border-emerald-800/30">
+                  <i class="fa-solid fa-store"></i>
+                </div>
+                <div>
+                  <h4 class="font-bold text-slate-200">편의 점포</h4>
+                  <p class="text-xs text-slate-400">인접(상하좌우)한 <span class="text-sky-400">주택 1개당 +4 코인/초</span> 추가 생산</p>
+                </div>
+              </div>
+              <div class="text-right">
+                <span class="text-xs block text-slate-400">비용</span>
+                <span class="text-sm font-black text-amber-400" id="cost-shop">150</span>
+              </div>
+            </button>
+
+            <!-- 공장 (Factory) -->
+            <button id="build-factory" class="tool-btn flex items-center justify-between p-3 rounded-xl border-2 border-slate-800 bg-slate-900 hover:bg-slate-850 transition text-left group">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-purple-950/80 text-purple-400 flex items-center justify-center text-lg border border-purple-800/30">
+                  <i class="fa-solid fa-industry"></i>
+                </div>
+                <div>
+                  <h4 class="font-bold text-slate-200">조립 공장</h4>
+                  <p class="text-xs text-slate-400">기본 <span class="text-amber-400 font-semibold">+10</span>, 인접한 <span class="text-purple-400">공장 하나당 생산량 2배</span> 곱연산</p>
+                </div>
+              </div>
+              <div class="text-right">
+                <span class="text-xs block text-slate-400">비용</span>
+                <span class="text-sm font-black text-amber-400" id="cost-factory">500</span>
+              </div>
+            </button>
+
+            <!-- 금융 센터 (Bank) -->
+            <button id="build-bank" class="tool-btn flex items-center justify-between p-3 rounded-xl border-2 border-slate-800 bg-slate-900 hover:bg-slate-850 transition text-left group">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-amber-950/80 text-amber-400 flex items-center justify-center text-lg border border-amber-800/30">
+                  <i class="fa-solid fa-building-columns"></i>
+                </div>
+                <div>
+                  <h4 class="font-bold text-slate-200">지역 은행</h4>
+                  <p class="text-xs text-slate-400">맵 전체의 <span class="text-emerald-400">모든 상가 및 주택의 생산성 +15%</span></p>
+                </div>
+              </div>
+              <div class="text-right">
+                <span class="text-xs block text-slate-400">비용</span>
+                <span class="text-sm font-black text-amber-400" id="cost-bank">1,500</span>
+              </div>
+            </button>
+
+            <!-- 첨단 연구소 (Lab) -->
+            <button id="build-lab" class="tool-btn flex items-center justify-between p-3 rounded-xl border-2 border-slate-800 bg-slate-900 hover:bg-slate-850 transition text-left group">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-pink-950/80 text-pink-400 flex items-center justify-center text-lg border border-pink-800/30">
+                  <i class="fa-solid fa-flask"></i>
+                </div>
+                <div>
+                  <h4 class="font-bold text-slate-200">양자 연구소</h4>
+                  <p class="text-xs text-slate-400">기본 <span class="text-amber-400 font-semibold">+35 코인/초</span> 생산, 특수 업그레이드 잠금 해제</p>
+                </div>
+              </div>
+              <div class="text-right">
+                <span class="text-xs block text-slate-400">비용</span>
+                <span class="text-sm font-black text-amber-400" id="cost-lab">5,000</span>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- [패널 2] 업그레이드 / 연구 -->
+      <div id="panel-upgrade" class="hidden flex-1 flex flex-col gap-4">
+        <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+          <h3 class="text-sm font-bold text-slate-400 mb-3 uppercase tracking-wider">상시 업그레이드 연구</h3>
+          <div class="flex flex-col gap-3">
+            
+            <!-- 업그레이드 1: 주택 층수 확장 -->
+            <div class="bg-slate-950/60 p-3 rounded-xl border border-slate-800 flex justify-between items-center gap-3">
+              <div>
+                <span class="text-[10px] bg-sky-950 text-sky-400 px-2 py-0.5 rounded font-bold uppercase">주택</span>
+                <h4 class="font-bold text-slate-200 mt-1 text-sm">고층 빌라 리모델링</h4>
+                <p class="text-xs text-slate-400">모든 주택의 기본 생산량이 +3 코인 증가합니다.</p>
+                <span id="lvl-upg-house" class="text-xs text-slate-500">현재 레벨: 0</span>
+              </div>
+              <button id="btn-upg-house" class="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black px-4 py-2 rounded-lg text-sm transition shrink-0">
+                <span id="cost-upg-house">200</span>
+              </button>
+            </div>
+
+            <!-- 업그레이드 2: 프랜차이즈 상점 -->
+            <div class="bg-slate-950/60 p-3 rounded-xl border border-slate-800 flex justify-between items-center gap-3">
+              <div>
+                <span class="text-[10px] bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded font-bold uppercase">상점</span>
+                <h4 class="font-bold text-slate-200 mt-1 text-sm">대형 프랜차이즈 입점</h4>
+                <p class="text-xs text-slate-400">상점의 인접 시너지가 +2 코인 추가 증가합니다.</p>
+                <span id="lvl-upg-shop" class="text-xs text-slate-500">현재 레벨: 0</span>
+              </div>
+              <button id="btn-upg-shop" class="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black px-4 py-2 rounded-lg text-sm transition shrink-0">
+                <span id="cost-upg-shop">500</span>
+              </button>
+            </div>
+
+            <!-- 업그레이드 3: 스마트 컨베이어 -->
+            <div class="bg-slate-950/60 p-3 rounded-xl border border-slate-800 flex justify-between items-center gap-3">
+              <div>
+                <span class="text-[10px] bg-purple-950 text-purple-400 px-2 py-0.5 rounded font-bold uppercase">공장</span>
+                <h4 class="font-bold text-slate-200 mt-1 text-sm">자동화 스마트 컨베이어</h4>
+                <p class="text-xs text-slate-400">공장의 기본 생산량이 +15 코인 증가합니다.</p>
+                <span id="lvl-upg-factory" class="text-xs text-slate-500">현재 레벨: 0</span>
+              </div>
+              <button id="btn-upg-factory" class="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black px-4 py-2 rounded-lg text-sm transition shrink-0">
+                <span id="cost-upg-factory">1,200</span>
+              </button>
+            </div>
+
+            <!-- 업그레이드 4: 양자 촉매 (연구소 필요) -->
+            <div class="bg-slate-950/60 p-3 rounded-xl border border-slate-800 flex justify-between items-center gap-3 opacity-60" id="upg-lab-container">
+              <div>
+                <span class="text-[10px] bg-pink-950 text-pink-400 px-2 py-0.5 rounded font-bold uppercase">양자</span>
+                <h4 class="font-bold text-slate-200 mt-1 text-sm">양자 촉매 가속</h4>
+                <p class="text-xs text-slate-400">도시 전체 건물 생산성을 추가로 +20% 가속합니다. (건설된 연구소 1개 이상 필요)</p>
+                <span id="lvl-upg-lab" class="text-xs text-slate-500">현재 레벨: 0</span>
+              </div>
+              <button id="btn-upg-lab" class="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black px-4 py-2 rounded-lg text-sm transition shrink-0" disabled>
+                <span id="cost-upg-lab">8,000</span>
+              </button>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- [패널 3] 도시 상태 보고서 -->
+      <div id="panel-status" class="hidden flex-1 flex flex-col gap-4">
+        <div class="bg-slate-900/60 p-5 rounded-xl border border-slate-800 flex flex-col gap-4">
+          <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800 pb-2">도시 통계 요약</h3>
+          
+          <div class="grid grid-cols-2 gap-4">
+            <div class="bg-slate-950 p-3 rounded-lg text-center">
+              <span class="text-xs text-slate-500 font-bold block">건설된 타일</span>
+              <span id="stat-built-count" class="text-xl font-extrabold text-white">0 / 100</span>
+            </div>
+            <div class="bg-slate-950 p-3 rounded-lg text-center">
+              <span class="text-xs text-slate-500 font-bold block">도시 총 생산량</span>
+              <span id="stat-total-produced" class="text-xl font-extrabold text-amber-400">0</span>
+            </div>
+          </div>
+
+          <div class="bg-slate-950/80 p-4 rounded-xl space-y-2.5">
+            <h4 class="text-xs font-bold text-slate-400 flex items-center gap-1.5">
+              <i class="fa-solid fa-circle-nodes text-slate-500"></i>건물 비율
+            </h4>
+            <div class="flex justify-between text-xs">
+              <span>단독 주택</span>
+              <span id="stat-count-house" class="font-bold text-sky-400">0개</span>
+            </div>
+            <div class="flex justify-between text-xs">
+              <span>편의 점포</span>
+              <span id="stat-count-shop" class="font-bold text-emerald-400">0개</span>
+            </div>
+            <div class="flex justify-between text-xs">
+              <span>조립 공장</span>
+              <span id="stat-count-factory" class="font-bold text-purple-400">0개</span>
+            </div>
+            <div class="flex justify-between text-xs">
+              <span>지역 은행</span>
+              <span id="stat-count-bank" class="font-bold text-amber-400">0개</span>
+            </div>
+            <div class="flex justify-between text-xs">
+              <span>양자 연구소</span>
+              <span id="stat-count-lab" class="font-bold text-pink-400">0개</span>
+            </div>
+          </div>
+
+          <!-- 로컬 세이브/로드 컨트롤 -->
+          <div class="pt-4 border-t border-slate-800 flex gap-2">
+            <button id="btn-save-game" class="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-lg text-xs transition flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-floppy-disk"></i> 브라우저 저장
+            </button>
+            <button id="btn-load-game" class="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-lg text-xs transition flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-file-import"></i> 저장 불러오기
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- 게임 오버 또는 목표 달성 마일스톤 안내 레이어 -->
+  <div id="milestone-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+    <div class="bg-slate-900 border border-slate-700 max-w-md w-full p-6 rounded-2xl shadow-2xl text-center m-4">
+      <div class="w-16 h-16 bg-amber-500/10 text-amber-400 rounded-full flex items-center justify-center text-3xl mx-auto mb-4 border border-amber-500/30">
+        <i class="fa-solid fa-crown animate-pulse"></i>
+      </div>
+      <h3 class="text-2xl font-black text-white mb-2" id="milestone-title">위대한 업적 달성!</h3>
+      <p class="text-slate-400 text-sm mb-6 leading-relaxed" id="milestone-desc">귀하의 도시가 마침내 초당 생산 1,000 코인 장벽을 허물었습니다. 이제 더 큰 세계의 거물이 되셨습니다!</p>
+      <button id="btn-milestone-close" class="w-full py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-xl transition shadow-lg shadow-amber-500/20">
+        계속 건설하기
+      </button>
+    </div>
+  </div>
+
+  <!-- 푸터 -->
+  <footer class="bg-slate-950 py-4 px-6 text-center text-xs text-slate-600 mt-auto border-t border-slate-900">
+    <p>© 2026 Tycoon Master - Built with PixiJS & Tailwind CSS. 모든 도시 기획은 실시간으로 저장 및 모사됩니다.</p>
+  </footer>
+
+  <script>
+    // --- [1] 게임 상태 및 변수 선언 ---
+    const GAME_WIDTH = 550;
+    const GAME_HEIGHT = 550;
+    const GRID_SIZE = 10;
+    const TILE_SIZE = GAME_WIDTH / GRID_SIZE; // 55px
+
+    let coins = 100; // 초기 자본
+    let totalProduced = 0; // 누적 생산량
+    let selectedTool = null; // 현재 짓고 있는 도구 ('demolish', 'house', 'shop', 'factory', 'bank', 'lab')
+    let currentCps = 0;
+
+    // 미일스톤 도달 플래그
+    let milestoneFlags = {
+      cps100: false,
+      cps1000: false,
+      cps10000: false
+    };
+
+    // 타일 데이터 (10x10)
+    // 타입: null (빈 땅), 'house', 'shop', 'factory', 'bank', 'lab'
+    let gridData = Array(GRID_SIZE).fill(null).map(() => 
+      Array(GRID_SIZE).fill(null).map(() => ({
+        type: null,
+        level: 1,
+        baseOutput: 0
+      }))
+    );
+
+    // 건물 사양 및 비용
+    const BUILDINGS = {
+      house: {
+        name: '단독 주택',
+        baseCost: 50,
+        costMultiplier: 1.3,
+        color: 0x38bdf8, // sky-400
+        icon: '🏠'
+      },
+      shop: {
+        name: '편의 점포',
+        baseCost: 150,
+        costMultiplier: 1.35,
+        color: 0x34d399, // emerald-400
+        icon: '🛒'
+      },
+      factory: {
+        name: '조립 공장',
+        baseCost: 500,
+        costMultiplier: 1.4,
+        color: 0xc084fc, // purple-400
+        icon: '🏭'
+      },
+      bank: {
+        name: '지역 은행',
+        baseCost: 1500,
+        costMultiplier: 1.5,
+        color: 0xfbbf24, // amber-400
+        icon: '🏦'
+      },
+      lab: {
+        name: '양자 연구소',
+        baseCost: 5000,
+        costMultiplier: 1.6,
+        color: 0xf472b6, // pink-400
+        icon: '🧪'
+      }
+    };
+
+    // 업그레이드 레벨 및 사양
+    let upgrades = {
+      house: { level: 0, cost: 200, multiplier: 1.5 },
+      shop: { level: 0, cost: 500, multiplier: 1.6 },
+      factory: { level: 0, cost: 1200, multiplier: 1.7 },
+      lab: { level: 0, cost: 8000, multiplier: 2.0 }
+    };
+
+    // 각 건물들의 현재 가격을 동적으로 계산
+    function getBuildingCost(type) {
+      if (!BUILDINGS[type]) return 0;
+      let count = 0;
+      for (let r = 0; r < GRID_SIZE; r++) {
+        for (let c = 0; c < GRID_SIZE; c++) {
+          if (gridData[r][c] && gridData[r][c].type === type) {
+            count++;
+          }
+        }
+      }
+      return Math.floor(BUILDINGS[type].baseCost * Math.pow(BUILDINGS[type].costMultiplier, count));
+    }
+
+    // --- [2] PixiJS 초기화 ---
+    const app = new PIXI.Application({
+      width: GAME_WIDTH,
+      height: GAME_HEIGHT,
+      backgroundColor: 0x090d16,
+      resolution: window.devicePixelRatio || 1,
+      autoDensity: true,
+      antialias: true
+    });
+
+    document.getElementById('canvas-container').appendChild(app.view);
+
+    // Pixi 컨테이너 및 텍스트 렌더러용 레이어
+    const gridContainer = new PIXI.Container();
+    const graphicsContainer = new PIXI.Container();
+    const labelContainer = new PIXI.Container();
+    app.stage.addChild(gridContainer);
+    app.stage.addChild(graphicsContainer);
+    app.stage.addChild(labelContainer);
+
+    // 인터랙티브 처리를 위한 그래픽 타일들
+    let tileGraphics = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(null));
+    let tileLabels = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(null));
+
+    // 그리드 보드 그리기 및 초기화
+    function initGameBoard() {
+      gridContainer.removeChildren();
+      graphicsContainer.removeChildren();
+      labelContainer.removeChildren();
+
+      for (let r = 0; r < GRID_SIZE; r++) {
+        for (let c = 0; c < GRID_SIZE; c++) {
+          const x = c * TILE_SIZE;
+          const y = r * TILE_SIZE;
+
+          // 배경 그리드 판 그리기
+          const bgRect = new PIXI.Graphics();
+          bgRect.lineStyle(1, 0x1e293b, 0.8);
+          bgRect.beginFill(0x111827);
+          bgRect.drawRect(0, 0, TILE_SIZE - 2, TILE_SIZE - 2);
+          bgRect.endFill();
+          bgRect.x = x + 1;
+          bgRect.y = y + 1;
+          bgRect.interactive = true;
+          bgRect.cursor = 'pointer';
+
+          // 마우스 오버 / 이벤트 리스너 등록
+          bgRect.on('pointerover', () => {
+            bgRect.alpha = 0.8;
+            showTileInfo(r, c);
+          });
+          bgRect.on('pointerout', () => {
+            bgRect.alpha = 1.0;
+          });
+          bgRect.on('pointerdown', () => {
+            handleTileClick(r, c);
+          });
+
+          gridContainer.addChild(bgRect);
+
+          // 건물이 들어설 그래픽 홀더
+          const bldGraphic = new PIXI.Graphics();
+          bldGraphic.x = x + 1;
+          bldGraphic.y = y + 1;
+          graphicsContainer.addChild(bldGraphic);
+          tileGraphics[r][c] = bldGraphic;
+
+          // 건물 아이콘 이모지/텍스트
+          const style = new PIXI.TextStyle({
+            fontSize: 22,
+            align: 'center'
+          });
+          const text = new PIXI.Text('', style);
+          text.anchor.set(0.5);
+          text.x = x + TILE_SIZE / 2;
+          text.y = y + TILE_SIZE / 2;
+          labelContainer.addChild(text);
+          tileLabels[r][c] = text;
+        }
+      }
+
+      // 로더 종료 애니메이션
+      setTimeout(() => {
+        const loader = document.getElementById('game-loader');
+        if (loader) loader.classList.add('opacity-0', 'pointer-events-none');
+      }, 500);
+    }
+
+    // --- [3] 게임 플레이 로직 ---
+
+    // 특정 타일 위에 호버했을 때 설명 갱신
+    function showTileInfo(r, c) {
+      const tile = gridData[r][c];
+      const hoverInfo = document.getElementById('hover-tile-info');
+      if (!tile || !tile.type) {
+        hoverInfo.innerHTML = `빈 토지 <span class="text-slate-500 font-normal">(${r + 1}, ${c + 1})</span> - 개발 준비 완료`;
+        return;
+      }
+
+      const bldInfo = BUILDINGS[tile.type];
+      const individualOutput = calculateSingleTileCps(r, c);
+      hoverInfo.innerHTML = `<span class="font-bold text-amber-300">${bldInfo.icon} ${bldInfo.name}</span> (${r+1}, ${c+1}) - <span class="text-emerald-400 font-bold">+${individualOutput.toFixed(1)} CPS</span>`;
+    }
+
+    // 타일 클릭 시 건설 또는 철거
+    function handleTileClick(r, c) {
+      const tile = gridData[r][c];
+
+      // 1. 철거 툴 선택 시
+      if (selectedTool === 'demolish') {
+        if (!tile || tile.type === null) return; // 이미 빈 땅이면 통과
+        gridData[r][c] = { type: null, level: 1, baseOutput: 0 };
+        createFloatyText(`-${BUILDINGS[tile.type].name} 철거 완료`, r, c, '#f87171');
+        updateBoardView();
+        recalculateCps();
+        updateUI();
+        return;
+      }
+
+      // 2. 건설 도구 선택 시
+      if (selectedTool) {
+        if (tile && tile.type !== null) {
+          showFloatingNotification('이미 다른 건물이 있습니다!', 'warn');
+          return;
+        }
+
+        const cost = getBuildingCost(selectedTool);
+        if (coins < cost) {
+          showFloatingNotification('건설 코인이 부족합니다!', 'error');
+          return;
+        }
+
+        // 코인 차감 및 건설 완료
+        coins -= cost;
+        gridData[r][c] = {
+          type: selectedTool,
+          level: 1,
+          baseOutput: 0
+        };
+
+        // 이펙트 생성
+        createFloatyText(`${BUILDINGS[selectedTool].icon} 건설!`, r, c, '#f59e0b');
+        createExplosionParticle(r, c, BUILDINGS[selectedTool].color);
+
+        updateBoardView();
+        recalculateCps();
+        updateUI();
+
+        // 툴 사용 후 건설 연속성 유지를 위해 선택 유지
+      } else {
+        showFloatingNotification('우측 패널에서 건설할 건물을 선택해주세요!', 'info');
+      }
+    }
+
+    // 부유하는 텍스트 이펙트 생성
+    function createFloatyText(textStr, r, c, colorStr) {
+      const x = c * TILE_SIZE + TILE_SIZE / 2;
+      const y = r * TILE_SIZE + TILE_SIZE / 2;
+
+      const style = new PIXI.TextStyle({
+        fontSize: 14,
+        fill: colorStr,
+        fontWeight: 'bold',
+        stroke: '#000000',
+        strokeThickness: 3
+      });
+      const txt = new PIXI.Text(textStr, style);
+      txt.anchor.set(0.5);
+      txt.x = x;
+      txt.y = y;
+      app.stage.addChild(txt);
+
+      // 서서히 떠오르며 사라지게 함
+      let elapsed = 0;
+      const animate = (delta) => {
+        txt.y -= 0.8 * delta;
+        txt.alpha -= 0.02 * delta;
+        elapsed += delta;
+        if (txt.alpha <= 0 || elapsed > 100) {
+          app.stage.removeChild(txt);
+          app.ticker.remove(animate);
+        }
+      };
+      app.ticker.add(animate);
+    }
+
+    // 건설 완료 축하용 단순 폭발 이펙트
+    function createExplosionParticle(r, c, colorHex) {
+      const x = c * TILE_SIZE + TILE_SIZE / 2;
+      const y = r * TILE_SIZE + TILE_SIZE / 2;
+      const particleCount = 12;
+      const particles = [];
+
+      for (let i = 0; i < particleCount; i++) {
+        const p = new PIXI.Graphics();
+        p.beginFill(colorHex);
+        p.drawCircle(0, 0, Math.random() * 3 + 2);
+        p.endFill();
+        p.x = x;
+        p.y = y;
+        app.stage.addChild(p);
+
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 3 + 1.5;
+        particles.push({
+          graphic: p,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          alpha: 1.0
+        });
+      }
+
+      const animateParticles = (delta) => {
+        let allDead = true;
+        particles.forEach(p => {
+          if (p.alpha > 0) {
+            p.graphic.x += p.vx * delta;
+            p.graphic.y += p.vy * delta;
+            p.graphic.alpha -= 0.04 * delta;
+            p.alpha -= 0.04 * delta;
+            allDead = false;
+          } else {
+            app.stage.removeChild(p.graphic);
+          }
+        });
+        if (allDead) {
+          app.ticker.remove(animateParticles);
+        }
+      };
+      app.ticker.add(animateParticles);
+    }
+
+    // 보드 렌더링 동기화
+    function updateBoardView() {
+      for (let r = 0; r < GRID_SIZE; r++) {
+        for (let c = 0; c < GRID_SIZE; c++) {
+          const tile = gridData[r][c];
+          const graphic = tileGraphics[r][c];
+          const label = tileLabels[r][c];
+
+          graphic.clear();
+
+          if (tile && tile.type) {
+            const info = BUILDINGS[tile.type];
+            // 건물 디자인 카드 드로잉
+            graphic.beginFill(info.color, 0.25);
+            graphic.lineStyle(2, info.color, 0.9);
+            graphic.drawRoundedRect(4, 4, TILE_SIZE - 10, TILE_SIZE - 10, 8);
+            graphic.endFill();
+
+            // 네온 광택 효과
+            graphic.beginFill(info.color, 0.4);
+            graphic.drawCircle(TILE_SIZE / 2, TILE_SIZE / 2, 8);
+            graphic.endFill();
+
+            label.text = info.icon;
+          } else {
+            label.text = '';
+          }
+        }
+      }
+    }
+
+    // --- [4] 경제학적 시뮬레이션 공식 연산 ---
+
+    // 단일 타일의 초당 생산량을 계산
+    function calculateSingleTileCps(r, c) {
+      const tile = gridData[r][c];
+      if (!tile || !tile.type) return 0;
+
+      let sum = 0;
+
+      // 상하좌우 탐색 헬퍼 함수
+      function countAdjacent(type) {
+        let count = 0;
+        const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+        for (let [dr, dc] of dirs) {
+          const nr = r + dr;
+          const nc = c + dc;
+          if (nr >= 0 && nr < GRID_SIZE && nc >= 0 && nc < GRID_SIZE) {
+            if (gridData[nr][nc] && gridData[nr][nc].type === type) {
+              count++;
+            }
+          }
+        }
+        return count;
+      }
+
+      // 1. 단독 주택 (House)
+      if (tile.type === 'house') {
+        sum = 2 + (upgrades.house.level * 3); // 레벨당 +3 증가
+      }
+
+      // 2. 편의 점포 (Shop)
+      else if (tile.type === 'shop') {
+        const houseCount = countAdjacent('house');
+        const shopUpgradeBonus = upgrades.shop.level * 2; // 레벨당 보너스 +2 추가
+        sum = houseCount * (4 + shopUpgradeBonus);
+      }
+
+      // 3. 조립 공장 (Factory)
+      else if (tile.type === 'factory') {
+        const adjFactories = countAdjacent('factory');
+        const baseFactoryOutput = 10 + (upgrades.factory.level * 15); // 레벨당 기본 생산 +15 증가
+        // 인접 공장 하나당 2배 곱연산
+        sum = baseFactoryOutput * Math.pow(2, adjFactories);
+      }
+
+      // 4. 지역 은행 (Bank)
+      else if (tile.type === 'bank') {
+        sum = 0; // 은행 그 자체로는 생산하지 않고, 맵 버프 역할을 수행
+      }
+
+      // 5. 양자 연구소 (Lab)
+      else if (tile.type === 'lab') {
+        sum = 35; // 강력한 고정 출력
+      }
+
+      return sum;
+    }
+
+    // 전체 도시 글로벌 통계 연산
+    function recalculateCps() {
+      let tempCps = 0;
+      let bankCount = 0;
+      let labCount = 0;
+
+      // 맵 전체 스캔
+      for (let r = 0; r < GRID_SIZE; r++) {
+        for (let c = 0; c < GRID_SIZE; c++) {
+          const tile = gridData[r][c];
+          if (!tile) continue;
+          if (tile.type === 'bank') bankCount++;
+          if (tile.type === 'lab') labCount++;
+        }
+      }
+
+      // 기본 합산
+      for (let r = 0; r < GRID_SIZE; r++) {
+        for (let c = 0; c < GRID_SIZE; c++) {
+          tempCps += calculateSingleTileCps(r, c);
+        }
+      }
+
+      // 글로벌 % 증가량 버프 계산 (은행 개수 x 15% 가산)
+      let bankMultiplier = 1.0 + (bankCount * 0.15);
+
+      // 양자 촉매 연구 보너스 (연구소 레벨 x 20% 가산)
+      let labUpgradeMultiplier = 1.0 + (upgrades.lab.level * 0.2);
+
+      currentCps = tempCps * bankMultiplier * labUpgradeMultiplier;
+
+      // 연구소 활성화 상태 감지 (특수 업그레이드 패널에 영향)
+      const labContainer = document.getElementById('upg-lab-container');
+      const btnUpgLab = document.getElementById('btn-upg-lab');
+      if (labCount > 0) {
+        labContainer.classList.remove('opacity-60');
+        btnUpgLab.removeAttribute('disabled');
+      } else {
+        labContainer.classList.add('opacity-60');
+        btnUpgLab.setAttribute('disabled', 'true');
+      }
+
+      // 마일스톤 업적 달성 검사
+      checkMilestones(currentCps);
+    }
+
+    // 정기 자금 생산 루프 (0.1초마다 실행하여 가독성 업그레이드)
+    let lastTime = Date.now();
+    function gameLoop() {
+      const now = Date.now();
+      const dt = (now - lastTime) / 1000;
+      lastTime = now;
+
+      const produced = currentCps * dt;
+      coins += produced;
+      totalProduced += produced;
+
+      updateCoinDisplay();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // --- [5] UI 및 패널 매니저 ---
+
+    // 가시적인 큰 수 표기 포맷터
+    function formatNumber(num) {
+      if (num >= 1000000) return (num / 1000000).toFixed(2) + 'M';
+      if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+      return Math.floor(num).toLocaleString();
+    }
+
+    function updateCoinDisplay() {
+      document.getElementById('coin-display').innerText = formatNumber(coins);
+      document.getElementById('cps-display').innerText = '+' + currentCps.toFixed(1);
+    }
+
+    // 주기적인 UI 및 상점 가격 변동 갱신
+    function updateUI() {
+      // 건물 타일 비용 업데이트
+      const tools = ['house', 'shop', 'factory', 'bank', 'lab'];
+      tools.forEach(tool => {
+        const costElement = document.getElementById(`cost-${tool}`);
+        if (costElement) {
+          costElement.innerText = formatNumber(getBuildingCost(tool));
+        }
+      });
+
+      // 업그레이드 비용 및 레벨 표기
+      document.getElementById('lvl-upg-house').innerText = `현재 레벨: ${upgrades.house.level}`;
+      document.getElementById('cost-upg-house').innerText = formatNumber(upgrades.house.cost);
+
+      document.getElementById('lvl-upg-shop').innerText = `현재 레벨: ${upgrades.shop.level}`;
+      document.getElementById('cost-upg-shop').innerText = formatNumber(upgrades.shop.cost);
+
+      document.getElementById('lvl-upg-factory').innerText = `현재 레벨: ${upgrades.factory.level}`;
+      document.getElementById('cost-upg-factory').innerText = formatNumber(upgrades.factory.cost);
+
+      document.getElementById('lvl-upg-lab').innerText = `현재 레벨: ${upgrades.lab.level}`;
+      document.getElementById('cost-upg-lab').innerText = formatNumber(upgrades.lab.cost);
+
+      // 통계 보고서 업데이트
+      let counts = { house: 0, shop: 0, factory: 0, bank: 0, lab: 0, empty: 0 };
+      for (let r = 0; r < GRID_SIZE; r++) {
+        for (let c = 0; c < GRID_SIZE; c++) {
+          const type = gridData[r][c]?.type;
+          if (type) counts[type]++;
+          else counts.empty++;
+        }
+      }
+
+      const totalBuilt = GRID_SIZE * GRID_SIZE - counts.empty;
+      document.getElementById('stat-built-count').innerText = `${totalBuilt} / 100`;
+      document.getElementById('stat-total-produced').innerText = formatNumber(totalProduced);
+      
+      document.getElementById('stat-count-house').innerText = `${counts.house}개`;
+      document.getElementById('stat-count-shop').innerText = `${counts.shop}개`;
+      document.getElementById('stat-count-factory').innerText = `${counts.factory}개`;
+      document.getElementById('stat-count-bank').innerText = `${counts.bank}개`;
+      document.getElementById('stat-count-lab').innerText = `${counts.lab}개`;
+
+      // 건설 버튼 활성화/비활성화 시각화
+      tools.forEach(tool => {
+        const btn = document.getElementById(`build-${tool}`);
+        if (btn) {
+          if (coins >= getBuildingCost(tool)) {
+            btn.classList.remove('opacity-50');
+          } else {
+            btn.classList.add('opacity-50');
+          }
+        }
+      });
+    }
+
+    // 건설 툴 선택 토글
+    function selectTool(toolType, buttonElement) {
+      selectedTool = toolType;
+      
+      // 기존 활성화 클래스 전면 제거
+      document.querySelectorAll('.tool-btn').forEach(btn => {
+        btn.classList.remove('border-amber-500', 'bg-slate-800');
+        btn.classList.add('border-slate-800');
+      });
+
+      if (buttonElement) {
+        buttonElement.classList.remove('border-slate-800');
+        buttonElement.classList.add('border-amber-500', 'bg-slate-800');
+      }
+    }
+
+    // 커스텀 알림 플로팅 메시지 (alert 대용)
+    function showFloatingNotification(msg, type = 'info') {
+      const container = document.body;
+      const toast = document.createElement('div');
+      toast.className = `fixed bottom-20 left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl shadow-2xl z-50 font-bold flex items-center gap-2 border transition-all duration-300 transform translate-y-4 opacity-0`;
+      
+      let icon = '<i class="fa-solid fa-circle-info"></i>';
+      if (type === 'error') {
+        toast.className += ' bg-red-950 text-red-400 border-red-800';
+        icon = '<i class="fa-solid fa-circle-exclamation"></i>';
+      } else if (type === 'warn') {
+        toast.className += ' bg-amber-950 text-amber-400 border-amber-800';
+        icon = '<i class="fa-solid fa-triangle-exclamation"></i>';
+      } else {
+        toast.className += ' bg-slate-900 text-slate-200 border-slate-700';
+      }
+
+      toast.innerHTML = `${icon} <span>${msg}</span>`;
+      container.appendChild(toast);
+
+      // 애니메이션 발동
+      setTimeout(() => {
+        toast.classList.remove('translate-y-4', 'opacity-0');
+      }, 50);
+
+      // 자진 삭제
+      setTimeout(() => {
+        toast.classList.add('translate-y-4', 'opacity-0');
+        setTimeout(() => toast.remove(), 300);
+      }, 2500);
+    }
+
+    // 업적 마일스톤 알림 팝업
+    function checkMilestones(cps) {
+      if (cps >= 100 && !milestoneFlags.cps100) {
+        milestoneFlags.cps100 = true;
+        showMilestoneModal('새내기 시장님!', '도시의 초당 코인 생산량이 최초로 100을 돌파했습니다! 산업의 기틀이 마련되었습니다.');
+      } else if (cps >= 1000 && !milestoneFlags.cps1000) {
+        milestoneFlags.cps1000 = true;
+        showMilestoneModal('대도시 설계자', '초당 코인 생산량 1,000 돌파! 이제 도시의 기하학적 배치가 환상적인 시너지를 일으키기 시작했습니다.');
+      } else if (cps >= 10000 && !milestoneFlags.cps10000) {
+        milestoneFlags.cps10000 = true;
+        showMilestoneModal('천상의 거물 타이쿤', '초당 코인 생산량이 10,000을 돌파했습니다! 이 완벽한 10x10의 기적은 전설로 남을 것입니다.');
+      }
+    }
+
+    function showMilestoneModal(title, desc) {
+      document.getElementById('milestone-title').innerText = title;
+      document.getElementById('milestone-desc').innerText = desc;
+      document.getElementById('milestone-modal').classList.remove('hidden');
+    }
+
+    // --- [6] 이벤트 바인딩 및 저장 기능 ---
+
+    // 탭 전환 이벤트 리스너
+    document.getElementById('tab-build').addEventListener('click', (e) => {
+      switchTab('build');
+    });
+    document.getElementById('tab-upgrade').addEventListener('click', (e) => {
+      switchTab('upgrade');
+    });
+    document.getElementById('tab-status').addEventListener('click', (e) => {
+      switchTab('status');
+    });
+
+    function switchTab(tabName) {
+      const tabs = ['build', 'upgrade', 'status'];
+      tabs.forEach(t => {
+        const btn = document.getElementById(`tab-${t}`);
+        const panel = document.getElementById(`panel-${t}`);
+        if (t === tabName) {
+          btn.classList.add('bg-slate-800', 'text-white');
+          btn.classList.remove('text-slate-400');
+          panel.classList.remove('hidden');
+        } else {
+          btn.classList.remove('bg-slate-800', 'text-white');
+          btn.classList.add('text-slate-400');
+          panel.classList.add('hidden');
+        }
+      });
+    }
+
+    // 건설 툴바 이벤트 리스너 바인딩
+    document.getElementById('tool-demolish').addEventListener('click', function() {
+      selectTool('demolish', this);
+    });
+    document.getElementById('build-house').addEventListener('click', function() {
+      selectTool('house', this);
+    });
+    document.getElementById('build-shop').addEventListener('click', function() {
+      selectTool('shop', this);
+    });
+    document.getElementById('build-factory').addEventListener('click', function() {
+      selectTool('factory', this);
+    });
+    document.getElementById('build-bank').addEventListener('click', function() {
+      selectTool('bank', this);
+    });
+    document.getElementById('build-lab').addEventListener('click', function() {
+      selectTool('lab', this);
+    });
+
+    // 도시 전체 리셋 버튼
+    document.getElementById('btn-clear-all').addEventListener('click', () => {
+      if (confirm('정말로 도시의 모든 구역을 비우고 초기화하시겠습니까? 보유한 코인과 업그레이드는 유지됩니다.')) {
+        for (let r = 0; r < GRID_SIZE; r++) {
+          for (let c = 0; c < GRID_SIZE; c++) {
+            gridData[r][c] = { type: null, level: 1, baseOutput: 0 };
+          }
+        }
+        updateBoardView();
+        recalculateCps();
+        updateUI();
+        showFloatingNotification('구역이 철저하게 정화되었습니다.', 'info');
+      }
+    });
+
+    // 업그레이드 단독 주택
+    document.getElementById('btn-upg-house').addEventListener('click', () => {
+      if (coins >= upgrades.house.cost) {
+        coins -= upgrades.house.cost;
+        upgrades.house.level++;
+        upgrades.house.cost = Math.floor(upgrades.house.cost * upgrades.house.multiplier);
+        recalculateCps();
+        updateUI();
+        showFloatingNotification('주택 설계 표준 리모델링 완료!', 'success');
+      } else {
+        showFloatingNotification('업그레이드 비용이 부족합니다!', 'error');
+      }
+    });
+
+    // 업그레이드 편의 점포
+    document.getElementById('btn-upg-shop').addEventListener('click', () => {
+      if (coins >= upgrades.shop.cost) {
+        coins -= upgrades.shop.cost;
+        upgrades.shop.level++;
+        upgrades.shop.cost = Math.floor(upgrades.shop.cost * upgrades.shop.multiplier);
+        recalculateCps();
+        updateUI();
+        showFloatingNotification('가맹 점포 프랜차이즈 전환 완료!', 'success');
+      } else {
+        showFloatingNotification('업그레이드 비용이 부족합니다!', 'error');
+      }
+    });
+
+    // 업그레이드 조립 공장
+    document.getElementById('btn-upg-factory').addEventListener('click', () => {
+      if (coins >= upgrades.factory.cost) {
+        coins -= upgrades.factory.cost;
+        upgrades.factory.level++;
+        upgrades.factory.cost = Math.floor(upgrades.factory.cost * upgrades.factory.multiplier);
+        recalculateCps();
+        updateUI();
+        showFloatingNotification('스마트 팩토리 최첨단 공정 적용!', 'success');
+      } else {
+        showFloatingNotification('업그레이드 비용이 부족합니다!', 'error');
+      }
+    });
+
+    // 업그레이드 양자 연구소
+    document.getElementById('btn-upg-lab').addEventListener('click', () => {
+      if (coins >= upgrades.lab.cost) {
+        coins -= upgrades.lab.cost;
+        upgrades.lab.level++;
+        upgrades.lab.cost = Math.floor(upgrades.lab.cost * upgrades.lab.multiplier);
+        recalculateCps();
+        updateUI();
+        showFloatingNotification('양자 가속 시너지가 가동됩니다!', 'success');
+      } else {
+        showFloatingNotification('업그레이드 비용이 부족합니다!', 'error');
+      }
+    });
+
+    // 업적 모달 닫기
+    document.getElementById('btn-milestone-close').addEventListener('click', () => {
+      document.getElementById('milestone-modal').classList.add('hidden');
+    });
+
+    // 브라우저 저장 기능 (localStorage)
+    document.getElementById('btn-save-game').addEventListener('click', () => {
+      const state = {
+        coins,
+        totalProduced,
+        gridData,
+        upgrades,
+        milestoneFlags
+      };
+      localStorage.setItem('tycoon_master_save', JSON.stringify(state));
+      showFloatingNotification('현재 도시 상황이 로컬 저장소에 저장되었습니다!', 'success');
+    });
+
+    // 브라우저 불러오기 기능 (localStorage)
+    document.getElementById('btn-load-game').addEventListener('click', () => {
+      const savedData = localStorage.getItem('tycoon_master_save');
+      if (!savedData) {
+        showFloatingNotification('저장된 백업 데이터가 존재하지 않습니다!', 'error');
+        return;
+      }
+      try {
+        const state = JSON.parse(savedData);
+        coins = state.coins || 0;
+        totalProduced = state.totalProduced || 0;
+        gridData = state.gridData || gridData;
+        upgrades = state.upgrades || upgrades;
+        milestoneFlags = state.milestoneFlags || milestoneFlags;
+
+        updateBoardView();
+        recalculateCps();
+        updateUI();
+        showFloatingNotification('도시 스냅샷을 완벽하게 복구했습니다!', 'success');
+      } catch (e) {
+        showFloatingNotification('세이브 데이터 파싱 중 실패했습니다.', 'error');
+      }
+    });
+
+    // 1초 간격으로 UI 밸런서 동작 (버튼 비활성화 유무 등 정밀 갱신)
+    setInterval(() => {
+      updateUI();
+    }, 1000);
+
+    // --- [7] 스타트업 초기화 ---
+    window.onload = function() {
+      initGameBoard();
+      updateBoardView();
+      recalculateCps();
+      updateUI();
+      // 0.1초 틱 단위로 돈 생산 루프 가동
+      gameLoop();
+    }
+  </script>
 </body>
 </html>
